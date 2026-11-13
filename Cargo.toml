@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/amipro-mobile"]
+# external/AmiPro-Linux is a link to the AmiPro-Linux checkout; it is a dependency, not a member.
+exclude = ["external"]
+
+# AmiPro-Linux's crates read these with `workspace = true`; Cargo finds this
+# file first because the link lives under this directory. Keep them equal to
+# AmiPro-Linux/Cargo.toml's [workspace.package].
+[workspace.package]
+edition = "2024"
+license = "MPL-2.0"
+rust-version = "1.85"
