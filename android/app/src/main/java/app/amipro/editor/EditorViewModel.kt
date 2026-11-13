@@ -22,6 +22,7 @@ import uniffi.amipro_mobile.FormatState
 import uniffi.amipro_mobile.StyleInfo
 import uniffi.amipro_mobile.FileKind
 import uniffi.amipro_mobile.Paragraph
+import uniffi.amipro_mobile.newDocument
 import uniffi.amipro_mobile.openDocument
 import java.io.File
 
@@ -79,6 +80,11 @@ class EditorViewModel(private val app: Application) {
     var canWriteBack by mutableStateOf(true)
         private set
     private var keepsOriginal = true
+    /** A document that has no file yet: Save asks where to put it. */
+    var isNew by mutableStateOf(false)
+        private set
+    /** Set when "New document" was chosen while edits were unsaved: asks before throwing them away. */
+    var pendingNew by mutableStateOf(false)
 
     var focus by mutableStateOf<FocusPos?>(null)
         private set
@@ -112,6 +118,7 @@ class EditorViewModel(private val app: Application) {
                 name = displayName
                 canWriteBack = canWrite(uri)
                 keepsOriginal = true
+                isNew = false
                 styles = opened.styles()
                 focus = null; format = null; pending = Pending()
                 notes = opened.report().notes +
@@ -143,6 +150,30 @@ class EditorViewModel(private val app: Application) {
         app.checkUriPermission(
             uri, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         ) == PackageManager.PERMISSION_GRANTED
+
+    /** New document: asks first if edits would be lost. */
+    fun requestNew() {
+        if (isOpen && edited) pendingNew = true else newDocument()
+    }
+
+    fun newDocument() {
+        pendingNew = false
+        doc?.close()
+        val d = newDocument(System.currentTimeMillis() / 1000)
+        doc = d
+        source = null
+        name = "Untitled.sam"
+        isNew = true
+        canWriteBack = false
+        keepsOriginal = false
+        styles = d.styles()
+        focus = null; format = null; pending = Pending()
+        notes = emptyList()
+        refreshAll()
+        edited = false
+        isOpen = true
+        caretTarget = 0 to 0
+    }
 
     /** A file chosen in the picker or sent by another app: asks first if edits would be lost. */
     fun requestOpen(uri: Uri) {
@@ -306,7 +337,8 @@ class EditorViewModel(private val app: Application) {
             AfterLosses.COPY -> {
                 val d = doc ?: return
                 val base = name.substringBeforeLast('.')
-                copyRequest = "$base copy." + if (d.kind() == FileKind.SAM) "sam" else "amipro"
+                val ext = if (d.kind() == FileKind.SAM) "sam" else "amipro"
+                copyRequest = if (isNew) "$base.$ext" else "$base copy.$ext"
             }
         }
     }
@@ -353,11 +385,13 @@ class EditorViewModel(private val app: Application) {
                 // The copy is now the document being edited; the file it came from is left exactly as it was.
                 source = uri
                 name = copyName
+                val wasNew = isNew
+                isNew = false
                 canWriteBack = true
                 keepsOriginal = false
                 notes = notes.filterNot { it.startsWith("Opened for reading only") }
                 edited = false
-                message = "Saved a copy as $copyName"
+                message = if (wasNew) "Saved as $copyName" else "Saved a copy as $copyName"
             } catch (e: Exception) {
                 message = "Could not save the copy: ${(e as? AmiException.Failed)?.detail ?: e.message}. Your edits are still open."
             } finally {
@@ -375,6 +409,6 @@ class EditorViewModel(private val app: Application) {
     }
 
     fun close() {
-        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false; focus = null; format = null; pending = Pending()
+        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false; isNew = false; focus = null; format = null; pending = Pending()
     }
 }

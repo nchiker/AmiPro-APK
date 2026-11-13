@@ -26,8 +26,14 @@
 - Checked with the Linux version: the phone-saved file (bold, italic, underline, 13 pt, Heading style) was run through AmiPro-Linux's own `sam_round_trip` and `loss_check` examples: sections equal 103 of 103, read back equal, "Save As would list nothing". The saved text uses Ami Pro's markup (`<+!>` bold, `<+">` italic, `<+#>` underline, `<:f260,,>` size, `@Heading@`). The VM is not used any more (owner's decision, 2026-11-13).
 - The Linux GUI cannot be given a file from here: it takes no file argument and File > Open goes through the desktop's file portal, which belongs to the real session, not a private display. The project's own headless render (`page_surface_screenshots`, `AMIPRO_PERF_SAM`; first build ~5.5 min, then seconds) is used for a picture: a phone-saved file with "Pages" bold, italic, underlined at 18 pt rendered correctly in the Linux page surface with its frames, table and picture frame intact; `sam_round_trip` on it: read back equal, sections 103 of 103, Save As would list nothing.
 
+## Added: New document (verified on the 4a, debug and release)
+- **New document** on the start screen and in the More menu. It is the Linux app's own starting document (`Document::default()`: Body Text, Heading 1, Heading 2, standard page layout, Doc Info stamped now), saved as SAM. It opens with "Untitled.sam", a "Start typing" hint and the keyboard up.
+- It has no file yet, so Save asks where (system create-file screen, suggested `Untitled.sam`); after that the document is that file and Save writes straight over it (checked: a second Save changed the file).
+- New document with unsaved edits asks "Discard your changes?" first (Keep editing / Discard and start new).
+- Enter in a heading gives a new paragraph in the SAME style (no next-style switch yet); pick Body Text from the style menu.
+- Checked with the Linux version on a phone-created file (Heading 1 title + body with a bold phrase): `sam_round_trip` read back equal, sections 51 of 51, Save As would list nothing; the Linux page render shows Heading 1 in Arial 20 and Times body with the bold phrase, page 1 of 1. Tests: `a_new_document_saves_as_sam_and_reads_back`, `an_empty_new_document_saves_and_reopens`.
+
 ## Not done
-- No New document.
 - Objects (U+FFFC) show as a box and can be deleted by typing over them (nothing protects them yet).
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).
@@ -35,4 +41,4 @@
 - Key Vault backup of `~/APK-Keys/amipro`: made by the owner 2026-11-13.
 
 ## Next (from FEASIBILITY.md)
-Step 3 (formatting) is built; left: protect objects, New document, face/colour, alignment, cross-paragraph selection. Then the VM check of phone-saved files and the owner's own use.
+Steps 3 (formatting) and New document are built; left: protect objects, next-style after Enter, face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.

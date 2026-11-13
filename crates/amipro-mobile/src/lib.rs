@@ -209,6 +209,23 @@ pub fn open_document(
     )))
 }
 
+/// A new, empty Ami Pro document (Body Text, Heading 1 and 2, the standard page), saved as SAM.
+#[uniffi::export]
+pub fn new_document(now_unix_seconds: i64) -> Arc<AmiDoc> {
+    let mut document = Document::default();
+    *document.info_mut() = amipro_document::DocumentInfo::new(ami_pro_time(now_unix_seconds));
+    Arc::new(AmiDoc::new(
+        document,
+        FileKind::Sam,
+        None,
+        OpenReport {
+            kind: FileKind::Sam,
+            paragraphs: 1,
+            notes: Vec::new(),
+        },
+    ))
+}
+
 impl AmiDoc {
     fn new(
         document: Document,
@@ -696,6 +713,34 @@ mod tests {
         assert_eq!(doc.sam_losses(at).unwrap(), vec!["Character formatting in 1 paragraph".to_string()]);
         doc.set_attribute(i, 0, 3, Attr::Bold, true).unwrap();
         assert!(doc.sam_losses(at).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_new_document_saves_as_sam_and_reads_back() {
+        let at = 1_800_000_000;
+        let doc = new_document(at);
+        assert_eq!(doc.kind(), FileKind::Sam);
+        assert_eq!(doc.paragraph_count(), 1);
+        assert!(!doc.is_edited());
+        let names: Vec<String> = doc.styles().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["Body Text", "Heading 1", "Heading 2"]);
+        doc.replace_text(0, 0, 0, "Hello\nWorld é".into()).unwrap();
+        doc.set_attribute(0, 0, 5, Attr::Bold, true).unwrap();
+        let heading = doc.styles().into_iter().find(|s| s.name == "Heading 1").unwrap();
+        doc.set_paragraph_style(1, heading.id).unwrap();
+        assert!(doc.sam_losses(at).unwrap().is_empty());
+        let again = reopened(&doc);
+        assert_eq!(again.paragraphs(), doc.paragraphs());
+        assert_eq!(again.paragraph(1).unwrap().style_name, "Heading 1");
+        assert!(again.format_state(0, 0, 5).unwrap().bold);
+    }
+
+    #[test]
+    fn an_empty_new_document_saves_and_reopens() {
+        let doc = new_document(1_800_000_000);
+        let again = reopened(&doc);
+        assert_eq!(again.paragraph_count(), 1);
+        assert_eq!(again.paragraph(0).unwrap().text, "");
     }
 
     #[test]

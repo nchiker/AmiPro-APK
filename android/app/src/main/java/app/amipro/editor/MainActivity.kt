@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -80,7 +81,7 @@ private fun App(vm: EditorViewModel) {
     if (vm.isOpen) {
         var confirmClose by remember { mutableStateOf(false) }
         BackHandler { if (vm.edited) confirmClose = true else vm.close() }
-        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onCopy = vm::requestCopy, onClose = { if (vm.edited) confirmClose = true else vm.close() })
+        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onClose = { if (vm.edited) confirmClose = true else vm.close() })
         if (confirmClose) AlertDialog(
             onDismissRequest = { confirmClose = false },
             title = { Text("Close without saving?") },
@@ -96,6 +97,7 @@ private fun App(vm: EditorViewModel) {
         ) {
             Text("AmiPro", style = MaterialTheme.typography.headlineLarge)
             Button(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !vm.busy) { Text("Open a document") }
+            OutlinedButton(onClick = vm::newDocument, enabled = !vm.busy) { Text("New document") }
             vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
@@ -116,6 +118,13 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.passwordRequest = null }) { Text("Cancel") } },
         )
     }
+    if (vm.pendingNew) AlertDialog(
+        onDismissRequest = { vm.pendingNew = false },
+        title = { Text("Discard your changes?") },
+        text = { Text("${vm.name} has changes that are not saved. Starting a new document will throw them away.") },
+        confirmButton = { TextButton(onClick = { vm.newDocument() }) { Text("Discard and start new") } },
+        dismissButton = { TextButton(onClick = { vm.pendingNew = false }) { Text("Keep editing") } },
+    )
     vm.pendingOpen?.let { next ->
         AlertDialog(
             onDismissRequest = { vm.pendingOpen = null },

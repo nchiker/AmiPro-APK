@@ -63,7 +63,7 @@ import uniffi.amipro_mobile.Paragraph
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onCopy: () -> Unit, onClose: () -> Unit) {
+fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onCopy: () -> Unit, onClose: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm.message) {
@@ -82,6 +82,7 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onCopy: () -> Unit, on
                     IconButton(onClick = vm::requestSave, enabled = vm.edited && !vm.busy) { Icon(Icons.Filled.Save, if (vm.canWriteBack) "Save" else "Save a copy") }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
                     }
@@ -132,6 +133,13 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
         textStyle = baseStyle(paragraph).copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         visualTransformation = transformation,
+        decorationBox = { inner ->
+            // An empty document would otherwise show nothing to tap.
+            if (value.text.isEmpty() && vm.paragraphs.size == 1) {
+                Text("Start typing", style = baseStyle(paragraph), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            inner()
+        },
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
