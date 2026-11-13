@@ -295,6 +295,11 @@ class EditorViewModel(private val app: Application) {
                 d.paragraph(index.toUInt())?.let { paragraphs[index] = it }
                 edited = true
             }
+        } catch (e: AmiException.ProtectedObject) {
+            // A picture, frame or table is kept untouched: put the text back and leave the caret where it was.
+            message = "That is a picture, frame or table AmiPro cannot show. It is kept; edit the text around it."
+            refreshAll()
+            caretTarget = index to end
         } catch (e: Exception) {
             message = "Could not make that change: ${(e as? AmiException.Failed)?.detail ?: e.message}"
             refreshAll()

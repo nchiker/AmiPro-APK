@@ -13,12 +13,18 @@ use amipro_formats::{ImportError, SamOptions, import_sam, protect, sam_document,
 
 uniffi::setup_scaffolding!();
 
+/// Marks an object (picture, frame anchor, ...) in paragraph text.
+const OBJECT_CHAR: char = '\u{FFFC}';
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum AmiError {
     #[error("This document is protected with a password")]
     PasswordRequired,
     #[error("That password does not open this document")]
     WrongPassword,
+    /// The edit would delete a picture, frame anchor or similar object the phone cannot show.
+    #[error("That part holds a picture, frame or table that AmiPro cannot show. It is kept; edit the text around it.")]
+    ProtectedObject,
     #[error("{detail}")]
     Failed { detail: String },
 }
@@ -295,10 +301,14 @@ impl AmiDoc {
                 .main_flow()
                 .paragraph(paragraph as usize)
                 .ok_or_else(|| failed("No such paragraph"))?;
-            (
-                byte_of(&source.text, start).ok_or_else(|| failed("Start is outside the paragraph"))?,
-                byte_of(&source.text, end).ok_or_else(|| failed("End is outside the paragraph"))?,
-            )
+            let from = byte_of(&source.text, start).ok_or_else(|| failed("Start is outside the paragraph"))?;
+            let to = byte_of(&source.text, end).ok_or_else(|| failed("End is outside the paragraph"))?;
+            // Objects (U+FFFC) are shown as a box and cannot be edited here: deleting or overwriting one would
+            // silently lose a picture or frame. Inserting beside one is fine.
+            if from < to && source.text.get(from..to).is_some_and(|replaced| replaced.contains(OBJECT_CHAR)) {
+                return Err(AmiError::ProtectedObject);
+            }
+            (from, to)
         };
         let at = |byte| Cursor {
             paragraph: paragraph as usize,
@@ -353,7 +363,12 @@ impl AmiDoc {
         // The characters to look at: every character start where the direct format can change.
         let mut points: Vec<usize> = Vec::new();
         if from == to {
-            if let Some((before, _)) = source.text.get(..from).and_then(|head| head.char_indices().next_back()) {
+            // The character before the caret, skipping objects (their own format is not the text's).
+            if let Some((before, _)) = source
+                .text
+                .get(..from)
+                .and_then(|head| head.char_indices().rev().find(|&(_, ch)| ch != OBJECT_CHAR))
+            {
                 points.push(before);
             }
         } else {
@@ -366,6 +381,7 @@ impl AmiDoc {
                 }
             }
         }
+        points.retain(|&byte| source.text[byte..].chars().next() != Some(OBJECT_CHAR));
         let formats: Vec<&CharacterFormat> = if points.is_empty() {
             vec![&source.end_format]
         } else {
@@ -741,6 +757,98 @@ mod tests {
         let again = reopened(&doc);
         assert_eq!(again.paragraph_count(), 1);
         assert_eq!(again.paragraph(0).unwrap().text, "");
+    }
+
+    #[test]
+    fn objects_cannot_be_deleted_or_overwritten_but_text_beside_them_can() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        let text = doc.paragraph(i).unwrap().text;
+        let units = text.encode_utf16().count() as u32;
+        assert!(text.ends_with(OBJECT_CHAR), "the sample's paragraph ends with an object");
+        let objects_before = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum::<usize>();
+        // Backspace over it, overwriting it, and a selection that merely covers it are all refused ...
+        for (start, end, with) in [(units - 1, units, ""), (units - 1, units, "x"), (units - 3, units, "abc"), (0, units, "")] {
+            assert!(
+                matches!(doc.replace_text(i, start, end, with.into()), Err(AmiError::ProtectedObject)),
+                "{start}..{end} -> {with:?}"
+            );
+        }
+        assert!(!doc.is_edited(), "a refused edit changes nothing");
+        assert_eq!(doc.paragraph(i).unwrap().text, text);
+        // ... while typing before it, beside it, deleting other text, and splitting the paragraph are not.
+        doc.replace_text(i, units - 1, units - 1, "ab".into()).unwrap();
+        doc.replace_text(i, 0, 1, "".into()).unwrap();
+        doc.replace_text(i, 2, 2, "\n".into()).unwrap();
+        let objects_after = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum::<usize>();
+        assert_eq!(objects_after, objects_before, "no object was lost");
+        // Backspace at a paragraph start (join) keeps the objects of both paragraphs.
+        assert!(doc.join_with_previous(i + 1).unwrap());
+        let objects_joined = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum::<usize>();
+        assert_eq!(objects_joined, objects_before, "a join lost an object");
+        // Saving and reading back keeps every object.
+        let again = reopened(&doc);
+        let objects_saved = again.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum::<usize>();
+        assert_eq!(objects_saved, objects_before);
+    }
+
+    /// Opt-in audit over a folder of real SAMs (read only; prints counts, never names or text):
+    /// `AMIPRO_REF_DIR=... cargo test --release -p amipro-mobile reference_audit -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads the owner's reference samples; set AMIPRO_REF_DIR"]
+    fn reference_audit() {
+        let Some(dir) = std::env::var_os("AMIPRO_REF_DIR") else { return };
+        let mut files = Vec::new();
+        let mut stack = vec![std::path::PathBuf::from(dir)];
+        while let Some(path) = stack.pop() {
+            for entry in std::fs::read_dir(&path).unwrap().flatten() {
+                let p = entry.path();
+                if p.is_dir() { stack.push(p) } else if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("sam")) { files.push(p) }
+            }
+        }
+        let (mut opened, mut protected, mut with_objects, mut refused, mut allowed_ok, mut mismatched) = (0, 0, 0, 0, 0, 0);
+        for path in &files {
+            let bytes = std::fs::read(path).unwrap();
+            let doc = match open_document(bytes, "ref".into(), None) {
+                Ok(d) => d,
+                Err(AmiError::PasswordRequired) => { protected += 1; continue }
+                Err(_) => continue,
+            };
+            opened += 1;
+            let before: usize = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum();
+            if before == 0 { continue }
+            with_objects += 1;
+            for (i, p) in doc.paragraphs().iter().enumerate() {
+                let Some(at) = p.text.find(OBJECT_CHAR) else { continue };
+                let u = p.text[..at].encode_utf16().count() as u32;
+                // Removing or replacing the object must be refused, and change nothing.
+                match doc.replace_text(i as u32, u, u + 1, String::new()) {
+                    Err(AmiError::ProtectedObject) => refused += 1,
+                    other => { mismatched += 1; eprintln!("not refused: {other:?}") }
+                }
+                // Typing beside it must work.
+                if doc.replace_text(i as u32, u, u, "z".into()).is_ok() { allowed_ok += 1 } else { mismatched += 1 }
+                break;
+            }
+            let after: usize = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum();
+            if after != before { mismatched += 1 }
+            let saved = reopened(&doc);
+            let kept: usize = saved.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum();
+            if kept != before { mismatched += 1 }
+        }
+        eprintln!("AUDIT files={} opened={opened} password_protected={protected} with_objects={with_objects} refused={refused} typing_beside_ok={allowed_ok} mismatches={mismatched}", files.len());
+        assert_eq!(mismatched, 0);
+    }
+
+    #[test]
+    fn the_format_bar_ignores_object_characters() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        let units = doc.paragraph(i).unwrap().text.encode_utf16().count() as u32;
+        let after_object = doc.format_state(i, units, units).unwrap();
+        let before_object = doc.format_state(i, units - 2, units - 2).unwrap();
+        assert_eq!(after_object.size_points, before_object.size_points);
+        assert_eq!(after_object.bold, before_object.bold);
     }
 
     #[test]

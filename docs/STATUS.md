@@ -33,12 +33,17 @@
 - Enter in a heading gives a new paragraph in the SAME style (no next-style switch yet); pick Body Text from the style menu.
 - Checked with the Linux version on a phone-created file (Heading 1 title + body with a bold phrase): `sam_round_trip` read back equal, sections 51 of 51, Save As would list nothing; the Linux page render shows Heading 1 in Arial 20 and Times body with the bold phrase, page 1 of 1. Tests: `a_new_document_saves_as_sam_and_reads_back`, `an_empty_new_document_saves_and_reopens`.
 
+## Added: objects are protected (verified on the 4a, debug and release)
+- An edit that would delete or overwrite an object (a picture, frame anchor or table anchor, shown as a box) is refused: the text snaps back, the caret stays, and a message says "That is a picture, frame or table AmiPro cannot show. It is kept; edit the text around it." Refused: Backspace over a box, typing over a selection that covers one (including select all), cut, paste over. Allowed: typing beside a box, deleting other text, Enter, joining paragraphs. The rule is enforced in the Rust wrapper (`AmiError::ProtectedObject`), not only in the screen.
+- The format bar skips object characters when it reads the format at a caret.
+- Audit over the owner's whole reference set (read only; `reference_audit`, opt-in with `AMIPRO_REF_DIR`; counts only): 424 files, 417 opened, 1 password-protected; 222 had objects; all 222 refused the delete, accepted typing beside the box, and kept every object through edit, save and reopen; 0 mismatches. The reference folder's hash was identical afterwards.
+- Cost: an object cannot be deleted from the phone at all (a paragraph that is only a box stays). A deliberate "delete object" action is a possible later addition.
+
 ## Not done
-- Objects (U+FFFC) show as a box and can be deleted by typing over them (nothing protects them yet).
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).
 - Save a copy always writes the format that was opened (no SAM -> native conversion choice).
 - Key Vault backup of `~/APK-Keys/amipro`: made by the owner 2026-11-13.
 
 ## Next (from FEASIBILITY.md)
-Steps 3 (formatting) and New document are built; left: protect objects, next-style after Enter, face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.
+Steps 3 (formatting) and New document are built; left: next-style after Enter, face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.
