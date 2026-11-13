@@ -1,6 +1,8 @@
 # AmiPro-APK
 
-A simple Android app that reads and writes Ami Pro documents (`.SAM`, and the lossless native `.amipro`). It reuses the file-format core of [AmiPro-Linux](https://github.com/nchiker/AmiPro-Linux) (plain Rust, no third-party dependencies), wrapped for Kotlin with UniFFI. Independent project, not affiliated with IBM, HCL or Lotus.
+A simple Android app that reads and writes Ami Pro documents (`.SAM`, and the lossless native `.amipro`). It reuses the file-format core of [AmiPro-Linux](https://github.com/nchiker/AmiPro-Linux) (plain Rust, no third-party dependencies), wrapped for Kotlin with UniFFI. Independent project. It is not affiliated with, endorsed by, or sponsored by IBM, HCL, or Lotus. Lotus and Ami Pro are trademarks of their owners; they are used here only to name the file formats and the program this software is compatible with.
+
+Licence: MPL-2.0 (see `LICENSE`), the same as AmiPro-Linux. The test file in `crates/amipro-mobile/tests/fixtures/` is hand-written and synthetic; no Ami Pro software or private documents are in this repository.
 
 - `crates/amipro-mobile/` the Rust facade: bytes in, paragraphs and character spans out (UTF-16 offsets), edits in, bytes out. `cargo test` runs on the host.
 - `android/` Kotlin + Compose app (`app.amipro.editor`, debug build `app.amipro.editor.debug` labelled "AmiPro (test)").
