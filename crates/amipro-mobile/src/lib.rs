@@ -677,6 +677,27 @@ mod tests {
         assert!(doc.set_attribute(i, 2, 2, Attr::Bold, true).is_err(), "an empty range is refused");
     }
 
+    /// The Linux core's loss check (the same one Save As uses there) reports bold switched off inside a
+    /// style that is bold: SAM cannot hold it. Every other phone formatting is written exactly.
+    #[test]
+    fn only_bold_off_over_a_bold_style_is_reported_as_a_loss() {
+        let at = 1_800_000_000;
+        let doc = open_sample();
+        doc.set_attribute(0, 0, 5, Attr::Italic, true).unwrap();
+        doc.set_attribute(0, 0, 5, Attr::Underline, true).unwrap();
+        doc.set_attribute(0, 0, 5, Attr::Strikethrough, true).unwrap();
+        doc.set_size(0, 0, 5, 18.0).unwrap();
+        assert!(doc.sam_losses(at).unwrap().is_empty());
+        let heading = doc.styles().into_iter().find(|s| s.name == "Heading").unwrap();
+        let i = plain_index(&doc);
+        doc.set_paragraph_style(i, heading.id).unwrap();
+        assert!(doc.sam_losses(at).unwrap().is_empty());
+        doc.set_attribute(i, 0, 3, Attr::Bold, false).unwrap();
+        assert_eq!(doc.sam_losses(at).unwrap(), vec!["Character formatting in 1 paragraph".to_string()]);
+        doc.set_attribute(i, 0, 3, Attr::Bold, true).unwrap();
+        assert!(doc.sam_losses(at).unwrap().is_empty());
+    }
+
     #[test]
     fn utf16_offsets_round_trip() {
         let text = "a😀b";
