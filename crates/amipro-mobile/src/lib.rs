@@ -135,9 +135,22 @@ pub fn open_document(
         ImportError::WrongPassword => AmiError::WrongPassword,
         other => failed(other),
     })?;
-    // One plain sentence: the section names and import warnings are for developers, not for the page.
+    // One plain sentence, and only when something is really there: nearly every SAM has layout sections,
+    // so the section names are no sign of frames or pictures.
     let mut notes = Vec::new();
-    if !import.report.unsupported_sections.is_empty() {
+    let has_objects = import
+        .document
+        .main_flow()
+        .paragraphs
+        .iter()
+        .any(|paragraph| !paragraph.objects.is_empty());
+    let has_frames = import.document.frames().any(|frame| {
+        !matches!(
+            frame.placement,
+            amipro_document::Placement::Header { .. } | amipro_document::Placement::Footer { .. }
+        )
+    });
+    if has_objects || has_frames {
         notes.push(
             "This document has frames, tables or pictures. They are kept when you save, but are not shown here."
                 .to_string(),
@@ -391,6 +404,15 @@ mod tests {
         assert!(!paragraphs.is_empty());
         assert!(paragraphs.iter().any(|p| !p.text.trim().is_empty()));
         assert!(paragraphs.iter().all(|p| !p.style_name.is_empty()));
+    }
+
+    #[test]
+    fn note_only_when_frames_or_objects_exist() {
+        assert_eq!(open_sample().report().notes.len(), 1);
+        let plain = b"[ver]\r\n\t3\r\n[sty]\r\n\tStandard\r\n[edoc]\r\n>\r\n";
+        if let Ok(doc) = open_document(plain.to_vec(), "plain".into(), None) {
+            assert!(doc.report().notes.is_empty());
+        }
     }
 
     #[test]

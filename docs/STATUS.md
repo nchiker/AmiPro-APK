@@ -1,4 +1,4 @@
-# STATUS (2026-11-13)
+# STATUS (2026-11-13, updated after Open with + Save a copy)
 
 ## Built and verified (spike, feasibility steps 1-2)
 - Rust facade `amipro-mobile`: open `.SAM` / native `.amipro` (password-protected SAM too), paragraphs with resolved style look and spans, replace text, split (Enter) and join (Backspace) paragraphs, undo/redo, save in the format opened (protected stays protected), SAM loss list. 7 host tests pass.
@@ -7,13 +7,24 @@
 - Measured: arm64 library 3.9 MB; release APK 6.4 MB.
 - Found and fixed: a typing race (the field adopted the core's echo of an older keystroke). Fields are now the source of truth while typing and reload from the core only after split/join/undo/redo (`EditorViewModel.epoch`).
 
+## Added: Open with and Save a copy (verified on the 4a, debug and release)
+- **Open with**: VIEW/EDIT filters for `.sam`/`.SAM`/`.Sam`/`.amipro` names and for the types `application/x-amipro-document` (the Linux app's type) and `application/octet-stream` (what providers report for unknown extensions). A path pattern needs `<data android:host="*"/>` or Android ignores it and the app is offered for EVERY file (caught on the phone). Tapping a file in Files by Google opens it in AmiPro.
+- **Read-only opens**: if the system gave no write grant, the banner says so, the Save icon becomes "Save a copy", and nothing can overwrite the source.
+- **Save a copy**: More menu or the Save icon (read-only opens): system "create file" screen with `<name> copy.sam`, loss list first for SAM, then the open document becomes the copy and the source is never touched. Plain Save on that copy works.
+- **Unsaved-edit guard**: opening another file (picker or Open with) while edited asks "Discard your changes?" (Keep editing / Discard and open).
+- **State is process-wide** (`AmiProApp.editor`), not per activity: file managers can start the app in a second window, which used to see an empty document and skip the guard.
+- **Note banner**: only when the document really has objects or non-header/footer frames (header and footer are frames in the model; section names such as `lay` are on nearly every SAM).
+- Tested with COPIES of reference samples (`sample A`, `sample B`, `sample C`, `sample D` 97 KB, `sample E`, `sample F` protected: password prompt and wrong-password retry work) in `Download/AmiProTest/ref/` on the 4a. The reference set on the owner's drive (`~/AmiPro-Reference/Charlie-Sample`) was only read: same hash before and after, files mode 400. Copies on the phone were checked unchanged; edited copies made by Save a copy sit in the phone's `Download/` (`sample C copy.sam`, `sample D copy.sam`). A saved copy differs from its original only by the page cache `[pg]` (dropped by the writer) and, for some files, a default `[fldnames]` it adds.
+- Not tested: an EDIT intent with a write grant from another app (the shell cannot grant URIs); a plain Save over a file opened from Files (VIEW is read-only by design).
+
 ## Not done
-- No New document; no way to open from other apps (Open with) or Save a copy elsewhere.
+- No New document.
 - No formatting controls (bold/italic/size/style picker); spans and styles are shown, not edited.
 - Objects (U+FFFC) show as a box and can be deleted by typing over them (nothing protects them yet).
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Not yet checked in the Ami Pro 3.1 VM (`~/AmiPro-Reference/vm-lab`): a phone-saved file opening there.
-- Key Vault backup of `~/APK-Keys/amipro` not made.
+- Save a copy always writes the format that was opened (no SAM -> native conversion choice).
+- Key Vault backup of `~/APK-Keys/amipro`: made by the owner 2026-11-13.
 
 ## Next (from FEASIBILITY.md)
-Step 3: run-level formatting and style picker, `Open with` / Save a copy, protect objects. Then the VM check of phone-saved files and the owner's own use.
+Step 3: run-level formatting and style picker, protect objects, New document. Then the VM check of phone-saved files and the owner's own use.

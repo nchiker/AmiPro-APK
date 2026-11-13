@@ -11,9 +11,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +62,8 @@ import uniffi.amipro_mobile.Paragraph
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onClose: () -> Unit) {
+fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onCopy: () -> Unit, onClose: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm.message) {
         vm.message?.let { snackbar.showSnackbar(it); vm.message = null }
@@ -74,8 +77,12 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onClose: () -> Unit) {
                     if (vm.busy) CircularProgressIndicator(Modifier.padding(8.dp))
                     IconButton(onClick = vm::undo) { Icon(Icons.AutoMirrored.Filled.Undo, "Undo") }
                     IconButton(onClick = vm::redo) { Icon(Icons.AutoMirrored.Filled.Redo, "Redo") }
-                    IconButton(onClick = vm::requestSave, enabled = vm.edited && !vm.busy) { Icon(Icons.Filled.Save, "Save") }
-                    IconButton(onClick = onOpen) { Icon(Icons.Filled.FolderOpen, "Open another document") }
+                    IconButton(onClick = vm::requestSave, enabled = vm.edited && !vm.busy) { Icon(Icons.Filled.Save, if (vm.canWriteBack) "Save" else "Save a copy") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
+                        DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
+                    }
                 },
             )
         },

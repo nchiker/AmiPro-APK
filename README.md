@@ -4,6 +4,7 @@ A simple Android app that reads and writes Ami Pro documents (`.SAM`, and the lo
 
 - `crates/amipro-mobile/` the Rust facade: bytes in, paragraphs and character spans out (UTF-16 offsets), edits in, bytes out. `cargo test` runs on the host.
 - `android/` Kotlin + Compose app (`app.amipro.editor`, debug build `app.amipro.editor.debug` labelled "AmiPro (test)").
+- Open with (VIEW/EDIT for .sam), Save a copy, password prompt, unsaved-edit guard: see `docs/STATUS.md`.
 - `docs/FEASIBILITY.md` why this works; `docs/STATUS.md` where it stands and what is next.
 
 ## Build

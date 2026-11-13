@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- No INTERNET permission: documents never leave the phone except where the user saves them. -->
     <application
+        android:name=".AmiProApp"
         android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
@@ -10,10 +11,36 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- "Open with": Ami Pro documents. Files named .sam, and files a provider reports with a generic or the
+                 Linux app's type (application/x-amipro-document; unknown extensions arrive as octet-stream). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/x-amipro-document" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <!-- A path pattern is ignored unless a host is declared; without this the filter matched every file. -->
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.sam" />
+                <data android:pathPattern=".*\\.SAM" />
+                <data android:pathPattern=".*\\.Sam" />
+                <data android:pathPattern=".*\\.amipro" />
             </intent-filter>
         </activity>
     </application>
