@@ -220,6 +220,21 @@ pub fn open_document(
 pub fn new_document(now_unix_seconds: i64) -> Arc<AmiDoc> {
     let mut document = Document::default();
     *document.info_mut() = amipro_document::DocumentInfo::new(ami_pro_time(now_unix_seconds));
+    // Enter at the end of a heading starts Body Text (Ami Pro's "Next style"). The core already does this for any
+    // style that has it on; its default headings do not, so a phone-made document turns it on for them.
+    let body = document
+        .styles()
+        .values()
+        .find(|style| style.name == "Body Text")
+        .map(|style| style.id);
+    if let Some(body) = body {
+        for style in document.styles_mut().values_mut() {
+            if style.name.starts_with("Heading") {
+                style.breaks = amipro_document::Breaks(style.breaks.0 | amipro_document::Breaks::NEXT_STYLE);
+                style.next = Some(body);
+            }
+        }
+    }
     Arc::new(AmiDoc::new(
         document,
         FileKind::Sam,
@@ -749,6 +764,33 @@ mod tests {
         assert_eq!(again.paragraphs(), doc.paragraphs());
         assert_eq!(again.paragraph(1).unwrap().style_name, "Heading 1");
         assert!(again.format_state(0, 0, 5).unwrap().bold);
+    }
+
+    #[test]
+    fn enter_at_the_end_of_a_heading_starts_body_text_in_a_new_document() {
+        let at = 1_800_000_000;
+        let doc = new_document(at);
+        let heading = doc.styles().into_iter().find(|s| s.name == "Heading 1").unwrap();
+        doc.set_paragraph_style(0, heading.id).unwrap();
+        doc.replace_text(0, 0, 0, "Title".into()).unwrap();
+        // At the end: Body Text. In the middle: the heading continues (as in Ami Pro).
+        doc.replace_text(0, 5, 5, "\n".into()).unwrap();
+        assert_eq!(doc.paragraph(1).unwrap().style_name, "Body Text");
+        doc.replace_text(0, 2, 2, "\n".into()).unwrap();
+        assert_eq!(doc.paragraph(1).unwrap().style_name, "Heading 1");
+        // The setting is written to the file and read back (Linux loss check lists nothing).
+        assert!(doc.sam_losses(at).unwrap().is_empty());
+        let again = reopened(&doc);
+        let end = again.paragraph(0).unwrap().text.encode_utf16().count() as u32;
+        again.replace_text(0, end, end, "\n".into()).unwrap();
+        assert_eq!(again.paragraph(1).unwrap().style_name, "Body Text", "next style survives save and reopen");
+        // An opened document keeps its own styles: the sample's Heading has no next style.
+        let sample = open_sample();
+        let before = sample.paragraph(0).unwrap().style_name;
+        let units = sample.paragraph(0).unwrap().text.encode_utf16().count() as u32;
+        assert_eq!(sample.paragraph(0).unwrap().text.chars().last(), Some(OBJECT_CHAR));
+        sample.replace_text(0, units, units, "\n".into()).unwrap();
+        assert_eq!(sample.paragraph(1).unwrap().style_name, before);
     }
 
     #[test]

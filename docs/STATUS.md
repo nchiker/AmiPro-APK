@@ -30,7 +30,7 @@
 - **New document** on the start screen and in the More menu. It is the Linux app's own starting document (`Document::default()`: Body Text, Heading 1, Heading 2, standard page layout, Doc Info stamped now), saved as SAM. It opens with "Untitled.sam", a "Start typing" hint and the keyboard up.
 - It has no file yet, so Save asks where (system create-file screen, suggested `Untitled.sam`); after that the document is that file and Save writes straight over it (checked: a second Save changed the file).
 - New document with unsaved edits asks "Discard your changes?" first (Keep editing / Discard and start new).
-- Enter in a heading gives a new paragraph in the SAME style (no next-style switch yet); pick Body Text from the style menu.
+- Enter at the end of a heading now starts Body Text in phone-made documents (the core's Next style, which its default headings had off; turned on for Heading styles in `new_document`). Enter in the middle keeps the heading. Opened documents keep their own styles, so a document whose heading has no next style still repeats it. The setting is written to the SAM and survives save and reopen (Linux audit: read back equal, 51 of 51 sections, no losses).
 - Checked with the Linux version on a phone-created file (Heading 1 title + body with a bold phrase): `sam_round_trip` read back equal, sections 51 of 51, Save As would list nothing; the Linux page render shows Heading 1 in Arial 20 and Times body with the bold phrase, page 1 of 1. Tests: `a_new_document_saves_as_sam_and_reads_back`, `an_empty_new_document_saves_and_reopens`.
 
 ## Added: objects are protected (verified on the 4a, debug and release)
@@ -46,4 +46,4 @@
 - Key Vault backup of `~/APK-Keys/amipro`: made by the owner 2026-11-13.
 
 ## Next (from FEASIBILITY.md)
-Steps 3 (formatting) and New document are built; left: next-style after Enter, face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.
+Steps 3 (formatting) and New document are built; left: face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.
