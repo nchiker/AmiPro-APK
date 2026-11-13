@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
@@ -70,6 +71,7 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onCopy: () -> Unit, on
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = { FormatBar(vm) },
         topBar = {
             TopAppBar(
                 title = { Text(vm.name + if (vm.edited) " •" else "", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
@@ -108,6 +110,7 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
         val target = vm.caretTarget
         if (target != null && target.first == index) {
             value = value.copy(selection = TextRange(target.second.coerceAtMost(value.text.length)))
+            vm.onSelection(index, value.selection.start, value.selection.end, true)
             runCatching { focus.requestFocus() }
             vm.caretTarget = null
         }
@@ -119,10 +122,12 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
         onValueChange = { new ->
             val old = value
             value = new
-            if (new.text != old.text) {
+            val typed = new.text != old.text
+            if (typed) {
                 val change = diff(old.text, new.text)
                 vm.replace(index, change.start, change.oldEnd, change.inserted.replace("\r", ""), new.selection.end)
             }
+            vm.onSelection(index, new.selection.start, new.selection.end, typed)
         },
         textStyle = baseStyle(paragraph).copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -131,6 +136,7 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .focusRequester(focus)
+            .onFocusChanged { if (it.isFocused) vm.onSelection(index, value.selection.start, value.selection.end, false) }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Backspace &&
                     value.selection.collapsed && value.selection.start == 0 && index > 0

@@ -7,8 +7,8 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use amipro_document::{Alignment, CharacterFormat, Document, NATIVE_MAGIC};
-use amipro_editing::{Cursor, Editor};
+use amipro_document::{Alignment, CharacterFormat, Document, NATIVE_MAGIC, StyleId, StyleOrigin};
+use amipro_editing::{CharacterAttribute, Command, Cursor, Editor, TextPosition};
 use amipro_formats::{ImportError, SamOptions, import_sam, protect, sam_document, sam_losses};
 
 uniffi::setup_scaffolding!();
@@ -83,6 +83,46 @@ pub struct OpenReport {
     pub paragraphs: u32,
     /// What the core kept but the phone cannot show (sections, controls, warnings).
     pub notes: Vec<String>,
+}
+
+/// A character attribute the phone can switch on or off.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Enum)]
+pub enum Attr {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+}
+
+impl Attr {
+    fn core(self) -> CharacterAttribute {
+        match self {
+            Self::Bold => CharacterAttribute::Bold,
+            Self::Italic => CharacterAttribute::Italic,
+            Self::Underline => CharacterAttribute::Underline,
+            Self::Strikethrough => CharacterAttribute::Strikethrough,
+        }
+    }
+}
+
+/// What the formatting buttons show for a selection (or the character before a caret).
+/// An attribute is "on" only when it is on for every character of the selection.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct FormatState {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+    /// Of the first character when sizes differ.
+    pub size_points: f32,
+    pub style_id: u64,
+    pub style_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct StyleInfo {
+    pub id: u64,
+    pub name: String,
 }
 
 struct State {
@@ -270,6 +310,108 @@ impl AmiDoc {
         Ok(joined)
     }
 
+    /// The styles a paragraph can be given, in the document's order.
+    pub fn styles(&self) -> Vec<StyleInfo> {
+        self.lock()
+            .editor
+            .document()
+            .styles()
+            .values()
+            .filter(|style| style.origin != StyleOrigin::Missing)
+            .map(|style| StyleInfo {
+                id: style.id.0,
+                name: style.name.clone(),
+            })
+            .collect()
+    }
+
+    /// The button states for `[start, end)` (UTF-16) in `paragraph`; a caret (`start == end`) reads the character before it.
+    pub fn format_state(&self, paragraph: u32, start: u32, end: u32) -> Option<FormatState> {
+        let state = self.lock();
+        let document = state.editor.document();
+        let source = document.main_flow().paragraph(paragraph as usize)?;
+        let style = document.styles().get(&source.style)?;
+        let from = byte_of(&source.text, start.min(end))?;
+        let to = byte_of(&source.text, start.max(end))?;
+        // The characters to look at: every character start where the direct format can change.
+        let mut points: Vec<usize> = Vec::new();
+        if from == to {
+            if let Some((before, _)) = source.text.get(..from).and_then(|head| head.char_indices().next_back()) {
+                points.push(before);
+            }
+        } else {
+            points.push(from);
+            for run in &source.runs {
+                for edge in [run.start, run.end] {
+                    if edge > from && edge < to && source.text.is_char_boundary(edge) {
+                        points.push(edge);
+                    }
+                }
+            }
+        }
+        let formats: Vec<&CharacterFormat> = if points.is_empty() {
+            vec![&source.end_format]
+        } else {
+            points.iter().map(|&byte| source.format_at(byte)).collect()
+        };
+        let all = |attribute: CharacterAttribute| formats.iter().all(|format| attribute.is_on(format, style));
+        Some(FormatState {
+            bold: all(CharacterAttribute::Bold),
+            italic: all(CharacterAttribute::Italic),
+            underline: all(CharacterAttribute::Underline),
+            strikethrough: all(CharacterAttribute::Strikethrough),
+            size_points: formats[0].font_size_points.unwrap_or(style.font_size_points),
+            style_id: style.id.0,
+            style_name: style.name.clone(),
+        })
+    }
+
+    /// Switches `attr` on or off over `[start, end)` (UTF-16) in `paragraph`, by Ami Pro's rules for a style.
+    pub fn set_attribute(&self, paragraph: u32, start: u32, end: u32, attr: Attr, on: bool) -> Result<(), AmiError> {
+        let mut state = self.lock();
+        let (from, to) = range_in(&state.editor, paragraph, start, end)?;
+        let command = Command::SetCharacterAttribute {
+            start: position(&state.editor, paragraph, from),
+            end: position(&state.editor, paragraph, to),
+            attribute: attr.core(),
+            on,
+        };
+        state.editor.execute(&command).map_err(failed)?;
+        state.edited = true;
+        Ok(())
+    }
+
+    /// Sets the point size over `[start, end)` (UTF-16) in `paragraph`; face and colour are kept.
+    pub fn set_size(&self, paragraph: u32, start: u32, end: u32, size_points: f32) -> Result<(), AmiError> {
+        let mut state = self.lock();
+        let (from, to) = range_in(&state.editor, paragraph, start, end)?;
+        let command = Command::SetFontParts {
+            start: position(&state.editor, paragraph, from),
+            end: position(&state.editor, paragraph, to),
+            family: None,
+            size: Some(size_points.clamp(4.0, 144.0)),
+            colour: None,
+        };
+        state.editor.execute(&command).map_err(failed)?;
+        state.edited = true;
+        Ok(())
+    }
+
+    /// Gives `paragraph` the style `style_id` (one of [`AmiDoc::styles`]).
+    pub fn set_paragraph_style(&self, paragraph: u32, style_id: u64) -> Result<(), AmiError> {
+        let mut state = self.lock();
+        state
+            .editor
+            .set_cursor(Cursor {
+                paragraph: paragraph as usize,
+                byte: 0,
+            })
+            .map_err(failed)?;
+        state.editor.apply_style(StyleId(style_id)).map_err(failed)?;
+        state.edited = true;
+        Ok(())
+    }
+
     pub fn undo(&self) -> Result<bool, AmiError> {
         self.lock().editor.undo().map_err(failed)
     }
@@ -315,6 +457,29 @@ impl AmiDoc {
             None => bytes,
         })
     }
+}
+
+fn position(editor: &Editor, paragraph: u32, byte: usize) -> TextPosition {
+    TextPosition {
+        flow: editor.document().main_flow_id(),
+        paragraph: paragraph as usize,
+        byte,
+    }
+}
+
+/// A non-empty UTF-16 range of `paragraph` as byte offsets.
+fn range_in(editor: &Editor, paragraph: u32, start: u32, end: u32) -> Result<(usize, usize), AmiError> {
+    let source = editor
+        .document()
+        .main_flow()
+        .paragraph(paragraph as usize)
+        .ok_or_else(|| failed("No such paragraph"))?;
+    let from = byte_of(&source.text, start.min(end)).ok_or_else(|| failed("Start is outside the paragraph"))?;
+    let to = byte_of(&source.text, start.max(end)).ok_or_else(|| failed("End is outside the paragraph"))?;
+    if from == to {
+        return Err(failed("Nothing is selected"));
+    }
+    Ok((from, to))
 }
 
 fn ami_pro_time(unix_seconds: i64) -> u32 {
@@ -450,6 +615,66 @@ mod tests {
         assert_eq!(doc.paragraph_count(), before);
         assert_eq!(doc.paragraph(0).unwrap().text, text);
         assert!(!doc.join_with_previous(0).unwrap());
+    }
+
+    fn reopened(doc: &AmiDoc) -> Arc<AmiDoc> {
+        open_document(doc.save_sam(1_800_000_000).unwrap(), "again".into(), None).unwrap()
+    }
+
+    /// The paragraph of the sample whose text is "Footer follows." plus an object (index found by text).
+    fn plain_index(doc: &AmiDoc) -> u32 {
+        doc.paragraphs().iter().position(|p| p.text.starts_with("Footer")).unwrap() as u32
+    }
+
+    #[test]
+    fn bold_toggles_over_a_range_and_survives_save() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        let before = doc.format_state(i, 0, 6).unwrap();
+        assert!(!before.bold);
+        doc.set_attribute(i, 0, 6, Attr::Bold, true).unwrap();
+        assert!(doc.format_state(i, 0, 6).unwrap().bold);
+        assert!(!doc.format_state(i, 0, 9).unwrap().bold, "bold only where every character is bold");
+        assert!(doc.format_state(i, 3, 3).unwrap().bold, "a caret reads the character before it");
+        // The Linux core writes it and reads it back the same.
+        let again = reopened(&doc);
+        assert!(again.format_state(i, 0, 6).unwrap().bold);
+        assert_eq!(again.paragraph(i).unwrap().spans, doc.paragraph(i).unwrap().spans);
+        doc.set_attribute(i, 0, 6, Attr::Bold, false).unwrap();
+        assert!(!doc.format_state(i, 0, 6).unwrap().bold);
+        assert!(doc.paragraph(i).unwrap().spans.iter().all(|s| s.bold != Some(true)));
+    }
+
+    #[test]
+    fn italic_underline_strike_and_undo() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        for attr in [Attr::Italic, Attr::Underline, Attr::Strikethrough] {
+            doc.set_attribute(i, 1, 4, attr, true).unwrap();
+        }
+        let state = doc.format_state(i, 1, 4).unwrap();
+        assert!(state.italic && state.underline && state.strikethrough);
+        let again = reopened(&doc).format_state(i, 1, 4).unwrap();
+        assert!(again.italic && again.underline && again.strikethrough);
+        while doc.undo().unwrap() {}
+        let state = doc.format_state(i, 1, 4).unwrap();
+        assert!(!state.italic && !state.underline && !state.strikethrough);
+    }
+
+    #[test]
+    fn size_and_style_changes_survive_save() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        doc.set_size(i, 0, 6, 20.0).unwrap();
+        assert_eq!(doc.format_state(i, 0, 6).unwrap().size_points, 20.0);
+        assert_eq!(reopened(&doc).format_state(i, 0, 6).unwrap().size_points, 20.0);
+        let styles = doc.styles();
+        assert!(styles.len() >= 2, "{styles:?}");
+        let other = styles.iter().find(|s| s.id != doc.format_state(i, 0, 0).unwrap().style_id).unwrap();
+        doc.set_paragraph_style(i, other.id).unwrap();
+        assert_eq!(doc.format_state(i, 0, 0).unwrap().style_name, other.name);
+        assert_eq!(reopened(&doc).paragraph(i).unwrap().style_name, other.name);
+        assert!(doc.set_attribute(i, 2, 2, Attr::Bold, true).is_err(), "an empty range is refused");
     }
 
     #[test]

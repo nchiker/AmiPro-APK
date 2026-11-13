@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.amipro_mobile.AmiDoc
 import uniffi.amipro_mobile.AmiException
+import uniffi.amipro_mobile.Attr
+import uniffi.amipro_mobile.FormatState
+import uniffi.amipro_mobile.StyleInfo
 import uniffi.amipro_mobile.FileKind
 import uniffi.amipro_mobile.Paragraph
 import uniffi.amipro_mobile.openDocument
@@ -26,6 +29,20 @@ import java.io.File
 class PasswordRequest(val uri: Uri, val wrong: Boolean)
 
 private enum class AfterLosses { SAVE, COPY }
+
+/** Where the caret or selection is: paragraph index and UTF-16 offsets. */
+class FocusPos(val paragraph: Int, val start: Int, val end: Int)
+
+/** Formatting chosen at a caret, applied to the text typed next (as Ami Pro does); null = leave as is. */
+data class Pending(
+    val bold: Boolean? = null,
+    val italic: Boolean? = null,
+    val underline: Boolean? = null,
+    val strike: Boolean? = null,
+    val size: Float? = null,
+) {
+    val any get() = bold != null || italic != null || underline != null || strike != null || size != null
+}
 
 /**
  * The open document and everything about it. It belongs to the app process ([AmiProApp.editor]), not to an
@@ -62,6 +79,16 @@ class EditorViewModel(private val app: Application) {
     var canWriteBack by mutableStateOf(true)
         private set
     private var keepsOriginal = true
+
+    var focus by mutableStateOf<FocusPos?>(null)
+        private set
+    /** What the formatting buttons show for the selection (or the character before the caret). */
+    var format by mutableStateOf<FormatState?>(null)
+        private set
+    var pending by mutableStateOf(Pending())
+        private set
+    var styles by mutableStateOf<List<StyleInfo>>(emptyList())
+        private set
     /** Where the caret should go after the paragraph list changed: paragraph, UTF-16 offset. */
     var caretTarget by mutableStateOf<Pair<Int, Int>?>(null)
     /** Bumped whenever the paragraph list changed shape or was re-read from the core, so every field reloads its text. */
@@ -85,6 +112,8 @@ class EditorViewModel(private val app: Application) {
                 name = displayName
                 canWriteBack = canWrite(uri)
                 keepsOriginal = true
+                styles = opened.styles()
+                focus = null; format = null; pending = Pending()
                 notes = opened.report().notes +
                     if (canWriteBack) emptyList() else listOf("Opened for reading only: Save makes a copy.")
                 refreshAll()
@@ -120,10 +149,102 @@ class EditorViewModel(private val app: Application) {
         if (isOpen && edited) pendingOpen = uri else open(uri)
     }
 
+
+    /** Tracks the caret or selection; [typed] is true when this move only follows typing (a pending format stays). */
+    fun onSelection(index: Int, start: Int, end: Int, typed: Boolean) {
+        val moved = focus?.let { it.paragraph != index || it.start != start || it.end != end } ?: true
+        if (!typed && moved) pending = Pending()
+        focus = FocusPos(index, minOf(start, end), maxOf(start, end))
+        updateFormat()
+    }
+
+    private fun updateFormat() {
+        val d = doc
+        val f = focus
+        format = if (d != null && f != null) d.formatState(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt()) else null
+    }
+
+    private fun applyPending(d: AmiDoc, index: Int, from: Int, to: Int) {
+        val p = pending
+        val i = index.toUInt(); val a = from.toUInt(); val b = to.toUInt()
+        p.bold?.let { d.setAttribute(i, a, b, Attr.BOLD, it) }
+        p.italic?.let { d.setAttribute(i, a, b, Attr.ITALIC, it) }
+        p.underline?.let { d.setAttribute(i, a, b, Attr.UNDERLINE, it) }
+        p.strike?.let { d.setAttribute(i, a, b, Attr.STRIKETHROUGH, it) }
+        p.size?.let { d.setSize(i, a, b, it) }
+    }
+
+    private fun afterFormat(index: Int) {
+        doc?.paragraph(index.toUInt())?.let { paragraphs[index] = it }
+        edited = true
+        updateFormat()
+    }
+
+    /** A bold/italic/underline/strikethrough button: over the selection, or for the next typed text at a caret. */
+    fun toggle(attr: Attr) {
+        val d = doc ?: return
+        val f = focus ?: return
+        val cur = format ?: return
+        val now = when (attr) {
+            Attr.BOLD -> pending.bold ?: cur.bold
+            Attr.ITALIC -> pending.italic ?: cur.italic
+            Attr.UNDERLINE -> pending.underline ?: cur.underline
+            Attr.STRIKETHROUGH -> pending.strike ?: cur.strikethrough
+        }
+        if (f.start != f.end) {
+            try {
+                d.setAttribute(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt(), attr, !now)
+                afterFormat(f.paragraph)
+            } catch (e: Exception) {
+                message = "Could not format: ${(e as? AmiException.Failed)?.detail ?: e.message}"
+            }
+        } else {
+            pending = when (attr) {
+                Attr.BOLD -> pending.copy(bold = !now)
+                Attr.ITALIC -> pending.copy(italic = !now)
+                Attr.UNDERLINE -> pending.copy(underline = !now)
+                Attr.STRIKETHROUGH -> pending.copy(strike = !now)
+            }
+        }
+    }
+
+    /** The size now shown: a pending size at a caret, else the selection's. */
+    val shownSize: Float get() = pending.size ?: format?.sizePoints ?: 12f
+
+    fun changeSize(delta: Float) {
+        val d = doc ?: return
+        val f = focus ?: return
+        val size = (shownSize + delta).coerceIn(6f, 72f)
+        if (f.start != f.end) {
+            try {
+                d.setSize(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt(), size)
+                afterFormat(f.paragraph)
+            } catch (e: Exception) {
+                message = "Could not change the size: ${(e as? AmiException.Failed)?.detail ?: e.message}"
+            }
+        } else {
+            pending = pending.copy(size = size)
+        }
+    }
+
+    /** Gives the focused paragraph one of the document's styles. */
+    fun setStyle(id: ULong) {
+        val d = doc ?: return
+        val f = focus ?: return
+        try {
+            d.setParagraphStyle(f.paragraph.toUInt(), id)
+            pending = Pending()
+            afterFormat(f.paragraph)
+        } catch (e: Exception) {
+            message = "Could not change the style: ${(e as? AmiException.Failed)?.detail ?: e.message}"
+        }
+    }
+
     private fun refreshAll() {
         val d = doc ?: return
         val all = d.paragraphs()
         paragraphs.clear(); paragraphs.addAll(all)
+        if (focus != null && focus!!.paragraph >= all.size) { focus = null; format = null }
         edited = d.isEdited()
         epoch++
     }
@@ -134,6 +255,7 @@ class EditorViewModel(private val app: Application) {
         try {
             val before = d.paragraphCount().toInt()
             d.replaceText(index.toUInt(), start.toUInt(), end.toUInt(), text)
+            if (pending.any && text.isNotEmpty() && !text.contains('\n') && focus?.paragraph == index) applyPending(d, index, start, start + text.length)
             if (d.paragraphCount().toInt() != before || text.contains('\n')) {
                 refreshAll()
                 // Enter put the caret at the start of the new paragraph.
@@ -253,6 +375,6 @@ class EditorViewModel(private val app: Application) {
     }
 
     fun close() {
-        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false
+        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false; focus = null; format = null; pending = Pending()
     }
 }

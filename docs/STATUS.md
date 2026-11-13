@@ -17,14 +17,21 @@
 - Tested with COPIES of reference samples (`sample A`, `sample B`, `sample C`, `sample D` 97 KB, `sample E`, `sample F` protected: password prompt and wrong-password retry work) in `Download/AmiProTest/ref/` on the 4a. The reference set on the owner's drive (`~/AmiPro-Reference/Charlie-Sample`) was only read: same hash before and after, files mode 400. Copies on the phone were checked unchanged; edited copies made by Save a copy sit in the phone's `Download/` (`sample C copy.sam`, `sample D copy.sam`). A saved copy differs from its original only by the page cache `[pg]` (dropped by the writer) and, for some files, a default `[fldnames]` it adds.
 - Not tested: an EDIT intent with a write grant from another app (the shell cannot grant URIs); a plain Save over a file opened from Files (VIEW is read-only by design).
 
+## Added: formatting controls (verified on the 4a, debug)
+- A bar above the keyboard (`FormatBar.kt`): **B I U S**, **A-** size **A+** (1 pt steps, 6-72), and the paragraph **style** menu (the document's own styles). Buttons show the state of the selection (on only if on for every character) or of the character before the caret.
+- Over a selection the change is made at once; **at a caret** the choice is pending and applies to the next text typed (Ami Pro's behaviour) until the caret is moved. A pending choice and the typing it formats are two undo steps.
+- The rules are the Linux core's (`Command::SetCharacterAttribute`, `SetFontParts`, `apply_style`; style-aware: switching off something the style has writes an explicit off, switching on what the style has clears the override).
+- Limits: a selection stays inside one paragraph (each paragraph is its own field); no font face or colour picker yet; no alignment, indents or spacing.
+- Checked with the Linux version: the phone-saved file (bold, italic, underline, 13 pt, Heading style) was run through AmiPro-Linux's own `sam_round_trip` and `loss_check` examples: sections equal 103 of 103, read back equal, "Save As would list nothing". The saved text uses Ami Pro's markup (`<+!>` bold, `<+">` italic, `<+#>` underline, `<:f260,,>` size, `@Heading@`). The VM is not used any more (owner's decision, 2026-11-13).
+- The Linux GUI cannot be given a file from here: it takes no file argument and File > Open goes through the desktop's file portal, which belongs to the real session, not a private display. The project's own headless render (`page_surface_screenshots`, `AMIPRO_PERF_SAM`) is used for a picture.
+
 ## Not done
 - No New document.
-- No formatting controls (bold/italic/size/style picker); spans and styles are shown, not edited.
 - Objects (U+FFFC) show as a box and can be deleted by typing over them (nothing protects them yet).
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
-- Not yet checked in the Ami Pro 3.1 VM (`~/AmiPro-Reference/vm-lab`): a phone-saved file opening there.
+- Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).
 - Save a copy always writes the format that was opened (no SAM -> native conversion choice).
 - Key Vault backup of `~/APK-Keys/amipro`: made by the owner 2026-11-13.
 
 ## Next (from FEASIBILITY.md)
-Step 3: run-level formatting and style picker, protect objects, New document. Then the VM check of phone-saved files and the owner's own use.
+Step 3 (formatting) is built; left: protect objects, New document, face/colour, alignment, cross-paragraph selection. Then the VM check of phone-saved files and the owner's own use.
