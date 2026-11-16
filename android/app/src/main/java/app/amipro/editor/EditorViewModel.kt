@@ -25,6 +25,7 @@ import uniffi.amipro_mobile.Paragraph
 import uniffi.amipro_mobile.newDocument
 import uniffi.amipro_mobile.openDocument
 import java.io.File
+import java.io.FileNotFoundException
 
 /** A file the user chose that needs its password before it opens. */
 class PasswordRequest(val uri: Uri, val wrong: Boolean)
@@ -103,6 +104,18 @@ class EditorViewModel(private val app: Application) {
 
     private val resolver get() = app.contentResolver
 
+    private val recentStore = RecentFiles(app)
+    /** Documents opened or saved before, newest first, offered on the start screen. */
+    val recents = mutableStateListOf<RecentFile>().apply { addAll(recentStore.load()) }
+
+    private fun setRecents(list: List<RecentFile>) { recents.clear(); recents.addAll(list) }
+
+    private fun remember(uri: Uri, displayName: String, write: Boolean) {
+        recentStore.add(uri, displayName, write, source)?.let { setRecents(it) }
+    }
+
+    fun forget(uri: Uri) = setRecents(recentStore.remove(uri, source))
+
     fun open(uri: Uri, password: String? = null) {
         viewModelScope.launch {
             busy = true
@@ -117,6 +130,7 @@ class EditorViewModel(private val app: Application) {
                 source = uri
                 name = displayName
                 canWriteBack = canWrite(uri)
+                remember(uri, displayName, canWriteBack)
                 keepsOriginal = true
                 isNew = false
                 styles = opened.styles()
@@ -135,6 +149,11 @@ class EditorViewModel(private val app: Application) {
                 message = "Could not open this file: ${e.detail}"
             } catch (e: Exception) {
                 message = "Could not open this file: ${e.message}"
+                // A recent file that was deleted or whose access was withdrawn would fail on every tap.
+                if ((e is SecurityException || e is FileNotFoundException) && recents.any { it.uri == uri }) {
+                    forget(uri)
+                    message = "That file is no longer available, so it was removed from the recent list."
+                }
             } finally {
                 busy = false
             }
@@ -394,6 +413,7 @@ class EditorViewModel(private val app: Application) {
                 isNew = false
                 canWriteBack = true
                 keepsOriginal = false
+                remember(uri, copyName, true)
                 notes = notes.filterNot { it.startsWith("Opened for reading only") }
                 edited = false
                 message = if (wasNew) "Saved as $copyName" else "Saved a copy as $copyName"

@@ -9,6 +9,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -90,16 +105,7 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("Keep editing") } },
         )
     } else {
-        Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("AmiPro", style = MaterialTheme.typography.headlineLarge)
-            Button(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !vm.busy) { Text("Open a document") }
-            OutlinedButton(onClick = vm::newDocument, enabled = !vm.busy) { Text("New document") }
-            vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
+        StartScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) })
     }
     vm.passwordRequest?.let { request ->
         var password by rememberSaveable { mutableStateOf("") }
@@ -142,5 +148,51 @@ private fun App(vm: EditorViewModel) {
             confirmButton = { TextButton(onClick = { vm.confirmLosses() }) { Text("Continue") } },
             dismissButton = { TextButton(onClick = { vm.pendingLosses = null }) { Text("Cancel") } },
         )
+    }
+}
+
+/** Open and New, with the documents used before listed underneath (centred as before when there are none). */
+@Composable
+private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit) {
+    val recents = vm.recents
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = if (recents.isEmpty()) Arrangement.spacedBy(16.dp, Alignment.CenterVertically) else Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("AmiPro", style = MaterialTheme.typography.headlineLarge)
+        Button(onClick = onOpen, enabled = !vm.busy) { Text("Open a document") }
+        OutlinedButton(onClick = vm::newDocument, enabled = !vm.busy) { Text("New document") }
+        vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (recents.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Recent", style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                items(recents.toList(), key = { it.uri.toString() }) { file ->
+                    ListItem(
+                        modifier = Modifier.clickable(enabled = !vm.busy) { vm.requestOpen(file.uri) },
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        leadingContent = { Icon(Icons.Filled.Description, contentDescription = null) },
+                        headlineContent = { Text(file.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                        supportingContent = {
+                            Text(
+                                android.text.format.DateUtils.getRelativeTimeSpanString(
+                                    file.openedAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS,
+                                ).toString(),
+                            )
+                        },
+                        trailingContent = {
+                            IconButton(onClick = { vm.forget(file.uri) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove ${file.name} from recent")
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
     }
 }

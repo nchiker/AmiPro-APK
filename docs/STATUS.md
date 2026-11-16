@@ -39,6 +39,12 @@
 - Audit over the owner's whole reference set (read only; `reference_audit`, opt-in with `AMIPRO_REF_DIR`; counts only): 424 files, 417 opened, 1 password-protected; 222 had objects; all 222 refused the delete, accepted typing beside the box, and kept every object through edit, save and reopen; 0 mismatches. The reference folder's hash was identical afterwards.
 - Cost: an object cannot be deleted from the phone at all (a paragraph that is only a box stays). A deliberate "delete object" action is a possible later addition.
 
+## Added: recent files on the start screen (builds; NOT yet run on the phone)
+- Under Open and New the start screen lists up to 8 recent documents (name, "5 minutes ago", a remove button). Tapping one opens it (password prompt and the unsaved-edit guard work as for any open). `RecentFiles.kt` keeps the list in app-private preferences and holds a lasting SAF grant for each file.
+- A file is listed after a successful open or Save a copy / first save of a new document. A file another app only handed over ("Open with") is listed only if Android lets us keep its grant; otherwise it is skipped rather than shown and failing later. A listed file that was deleted or lost its grant is dropped from the list when tapped.
+- Debug build compiles; the test phone was not connected, so on-device checks are still to do.
+- **RESUME HERE when the 4a is connected** (`adb -s <serial>`, synthetic/copied files only): install `android/app/build/outputs/apk/debug/app-debug.apk`, then check (1) open a file, force-stop the app, relaunch: it is listed and reopens; (2) the remove button; (3) delete a listed file in Files, tap it: message and row dropped; (4) a protected file from the list asks for the password; (5) Save a copy and a new document's first save appear in the list; (6) "Open with" from Files: note whether it is listed. Then try the RELEASE build (R8), update this section, and commit.
+
 ## Not done
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).
