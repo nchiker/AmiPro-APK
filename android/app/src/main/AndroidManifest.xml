@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- No INTERNET permission: documents never leave the phone except where the user saves them. -->
+    <!-- The network is used ONLY for "Check for updates" (an anonymous request to GitHub's releases, then the download of the app
+         file when the person taps Download). Documents never leave the phone except where the user saves them. Nothing runs in
+         the background. REQUEST_INSTALL_PACKAGES lets that update be handed to Android's installer (the person still confirms). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:name=".AmiProApp"
         android:allowBackup="false"
@@ -43,5 +47,7 @@
                 <data android:pathPattern=".*\\.amipro" />
             </intent-filter>
         </activity>
+        <!-- Android's installer reports the result of an update here (and hands over its confirmation screen). -->
+        <receiver android:name=".InstallResultReceiver" android:exported="false" />
     </application>
 </manifest>

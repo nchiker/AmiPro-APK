@@ -90,13 +90,23 @@ private fun App(vm: EditorViewModel) {
     val copyPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) vm.saveCopyTo(uri)
     }
+    val context = LocalContext.current
+    val updater = (context.applicationContext as AmiProApp).updater
+    var showUpdates by rememberSaveable { mutableStateOf(false) }
+    val openUpdates = { updater.reset(); showUpdates = true; updater.check() }
+    val print = {
+        val activity = context as android.app.Activity
+        val printer = activity.getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
+        printer.print(vm.name.ifBlank { "Document" }, DocumentPrintAdapter(activity, vm.name, vm.paragraphs.toList()), null)
+        Unit
+    }
     LaunchedEffect(vm.copyRequest) {
         vm.copyRequest?.let { copyPicker.launch(it); vm.copyRequest = null }
     }
     if (vm.isOpen) {
         var confirmClose by remember { mutableStateOf(false) }
         BackHandler { if (vm.edited) confirmClose = true else vm.close() }
-        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onClose = { if (vm.edited) confirmClose = true else vm.close() })
+        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onClose = { if (vm.edited) confirmClose = true else vm.close() })
         if (confirmClose) AlertDialog(
             onDismissRequest = { confirmClose = false },
             title = { Text("Close without saving?") },
@@ -105,7 +115,7 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("Keep editing") } },
         )
     } else {
-        StartScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) })
+        StartScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onUpdates = openUpdates, version = updater.installedVersion)
     }
     vm.passwordRequest?.let { request ->
         var password by rememberSaveable { mutableStateOf("") }
@@ -140,6 +150,7 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.pendingOpen = null }) { Text("Keep editing") } },
         )
     }
+    if (showUpdates) UpdateDialog(updater, context) { showUpdates = false; updater.reset() }
     vm.pendingLosses?.let { losses ->
         AlertDialog(
             onDismissRequest = { vm.pendingLosses = null },
@@ -153,7 +164,7 @@ private fun App(vm: EditorViewModel) {
 
 /** Open and New, with the documents used before listed underneath (centred as before when there are none). */
 @Composable
-private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit) {
+private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit, onUpdates: () -> Unit, version: String) {
     val recents = vm.recents
     Column(
         Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp),
@@ -164,6 +175,7 @@ private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit) {
         Button(onClick = onOpen, enabled = !vm.busy) { Text("Open a document") }
         OutlinedButton(onClick = vm::newDocument, enabled = !vm.busy) { Text("New document") }
         vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        TextButton(onClick = onUpdates) { Text("Check for updates (version $version)") }
         if (recents.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -195,4 +207,42 @@ private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun UpdateDialog(updater: Updater, context: android.content.Context, onDismiss: () -> Unit) {
+    val state = updater.state
+    val busy = state is UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing
+    AlertDialog(
+        onDismissRequest = { if (!busy || state is UpdateState.Installing) onDismiss() },
+        title = { Text("Updates") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (state) {
+                    is UpdateState.Idle -> Text("Installed version ${updater.installedVersion}.")
+                    is UpdateState.Checking -> Text("Looking for a newer version on GitHub...")
+                    is UpdateState.UpToDate -> Text("You have the newest version (${state.installed}).")
+                    is UpdateState.Available -> {
+                        Text("Version ${state.version.removePrefix("v")} is available (installed: ${updater.installedVersion}).")
+                        if (state.notes.isNotBlank()) Text(state.notes, style = MaterialTheme.typography.bodySmall)
+                        Text("The file is downloaded over a secure connection and checked against the installed app before anything is installed.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    is UpdateState.Downloading -> Text("Downloading ${state.version.removePrefix("v")}... ${state.percent}%")
+                    is UpdateState.Ready -> Text("Version ${state.version.removePrefix("v")} is downloaded and checked. Android will ask you to confirm the installation; your documents are not touched.")
+                    is UpdateState.NeedsPermission -> Text("Allow AmiPro to install apps on the page Android just opened, then come back and tap Install again.")
+                    is UpdateState.Installing -> Text("Waiting for Android's installer...")
+                    is UpdateState.Failed -> Text(state.reason, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            when (state) {
+                is UpdateState.Available -> TextButton(onClick = updater::download) { Text("Download") }
+                is UpdateState.Ready, is UpdateState.NeedsPermission -> TextButton(onClick = { updater.install(context) }) { Text("Install") }
+                is UpdateState.Failed -> TextButton(onClick = updater::check) { Text("Try again") }
+                else -> {}
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(if (state is UpdateState.Available || state is UpdateState.Ready || state is UpdateState.Failed) "Not now" else "Close") } },
+    )
 }
