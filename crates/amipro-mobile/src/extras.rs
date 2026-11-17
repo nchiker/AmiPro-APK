@@ -72,6 +72,9 @@ pub struct PageSetup {
     pub margin_bottom: i32,
     pub header: Vec<Paragraph>,
     pub footer: Vec<Paragraph>,
+    /// The header (footer) starts on page 2, not page 1.
+    pub header_from_second_page: bool,
+    pub footer_from_second_page: bool,
 }
 
 /// The token a page number is shown as in a header or footer paragraph.
@@ -524,7 +527,7 @@ impl AmiDoc {
                 amipro_document::CellContent::Text(flow) => document
                     .flow(flow)
                     .map(|flow| {
-                        flow.paragraphs.iter().map(|paragraph| paragraph.text.replace(OBJECT_CHAR, "")).collect::<Vec<_>>().join("\n")
+                        flow.paragraphs.iter().map(|paragraph| paragraph.text.replace(OBJECT_CHAR, "").replace('\u{2028}', "\n")).collect::<Vec<_>>().join("\n")
                     })
                     .unwrap_or_default(),
             })
@@ -543,7 +546,7 @@ impl AmiDoc {
                 .flow(*flow)?
                 .paragraphs
                 .iter()
-                .map(|paragraph| paragraph.text.replace(OBJECT_CHAR, ""))
+                .map(|paragraph| paragraph.text.replace(OBJECT_CHAR, "").replace('\u{2028}', "\n"))
                 .collect::<Vec<_>>()
                 .join("\n"),
         )
@@ -570,6 +573,7 @@ impl AmiDoc {
     pub fn page_setup(&self) -> PageSetup {
         let state = self.lock();
         let document = state.editor.document();
+        let (second_header, second_footer) = document.layouts().first().map_or((false, false), |l| (l.header_from_second_page, l.footer_from_second_page));
         let (width, height, margins, header, footer) = match document.layouts().first() {
             Some(layout) => (
                 layout.right.width,
@@ -615,6 +619,8 @@ impl AmiDoc {
             margin_bottom: margins.bottom,
             header: band(header),
             footer: band(footer),
+            header_from_second_page: second_header,
+            footer_from_second_page: second_footer,
         }
     }
 }

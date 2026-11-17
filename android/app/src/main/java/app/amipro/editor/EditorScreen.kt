@@ -1,13 +1,13 @@
 package app.amipro.editor
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,13 +39,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -56,6 +56,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uniffi.amipro_mobile.Align
@@ -63,15 +64,26 @@ import uniffi.amipro_mobile.Paragraph
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onCopy: () -> Unit, onPrint: () -> Unit, onUpdates: () -> Unit, onTheme: () -> Unit, onClose: () -> Unit) {
+fun EditorScreen(
+    vm: EditorViewModel,
+    onOpen: () -> Unit, onNew: () -> Unit, onCopy: () -> Unit, onPrint: () -> Unit,
+    onUpdates: () -> Unit, onTheme: () -> Unit, onObjects: () -> Unit, onClose: () -> Unit,
+) {
     var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val scroll = rememberScrollState()
     LaunchedEffect(vm.message) {
         vm.message?.let { snackbar.showSnackbar(it); vm.message = null }
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { FormatBar(vm) },
+        bottomBar = {
+            Column {
+                if (vm.findOpen) FindBar(vm)
+                ObjectBar(vm, onObjects)
+                if (!vm.findOpen) FormatBar(vm)
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(vm.name + if (vm.edited) " •" else "", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
@@ -82,10 +94,12 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onC
                     IconButton(onClick = vm::requestSave, enabled = vm.edited && !vm.busy) { Icon(Icons.Filled.Save, if (vm.canWriteBack) "Save" else "Save a copy") }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Find and replace...") }, onClick = { menu = false; vm.openFind() })
+                        DropdownMenuItem(text = { Text("Pictures and tables...") }, onClick = { menu = false; onObjects() })
+                        DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
-                        DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Appearance...") }, onClick = { menu = false; onTheme() })
                         DropdownMenuItem(text = { Text("Check for updates...") }, onClick = { menu = false; onUpdates() })
                     }
@@ -93,34 +107,54 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onC
             )
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-            if (vm.notes.isNotEmpty()) item {
+        Column(Modifier.padding(padding).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 8.dp)) {
+            if (vm.notes.isNotEmpty()) {
                 Text(vm.notes.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp))
             }
-            itemsIndexed(vm.paragraphs) { index, paragraph -> ParagraphField(vm, index, paragraph) }
+            DocumentField(vm, scroll)
         }
     }
 }
 
+/**
+ * The whole document is one text field (paragraphs separated by a newline), so selection handles, copy, cut and paste work
+ * across paragraphs. Every change is turned into one replacement between two (paragraph, offset) positions for the core.
+ * The field is the source of truth for its text while the user types; it is re-read from the core only when [EditorViewModel.epoch]
+ * changes (undo, redo, a refused edit, replace).
+ */
 @Composable
-private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph) {
-    // While the user types, this field is the source of truth for its text: the core echoes every keystroke
-    // back, and adopting an echo of an older keystroke over newer local text drops and misplaces characters.
-    // The text is re-read from the core only when the paragraph list changed shape (split, join, undo, redo).
-    var value by remember(index, vm.epoch) { mutableStateOf(TextFieldValue(paragraph.text)) }
+private fun DocumentField(vm: EditorViewModel, scroll: ScrollState) {
+    val lastSelection = remember { intArrayOf(0) }
+    var value by remember(vm.epoch) {
+        val text = vm.docText
+        val at = (vm.caretTarget ?: lastSelection[0]).coerceIn(0, text.length)
+        mutableStateOf(TextFieldValue(text, TextRange(at)))
+    }
+    LaunchedEffect(vm.epoch) { vm.caretTarget = null }
     val focus = remember { FocusRequester() }
-    LaunchedEffect(vm.caretTarget) {
-        val target = vm.caretTarget
-        if (target != null && target.first == index) {
-            value = value.copy(selection = TextRange(target.second.coerceAtMost(value.text.length)))
-            vm.onSelection(index, value.selection.start, value.selection.end, true)
-            runCatching { focus.requestFocus() }
-            vm.caretTarget = null
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var fieldTop by remember { mutableFloatStateOf(0f) }
+    val dark = isSystemInDarkTheme()
+
+    LaunchedEffect(vm.selectRequest) {
+        val r = vm.selectRequest ?: return@LaunchedEffect
+        vm.selectRequest = null
+        val range = TextRange(r.start.coerceIn(0, value.text.length), r.end.coerceIn(0, value.text.length))
+        value = value.copy(selection = range)
+        reportSelection(vm, value.text, range, typed = false)
+        layout?.let { l ->
+            val top = l.getBoundingBox(range.start.coerceAtMost((l.layoutInput.text.length - 1).coerceAtLeast(0))).top
+            scroll.animateScrollTo((fieldTop + top - 160f).toInt().coerceAtLeast(0))
         }
     }
-    val dark = isSystemInDarkTheme()
-    val transformation = remember(paragraph, dark) { StyleTransformation(paragraph, dark) }
+
+    val matchRanges = vm.matches.map { m ->
+        TextRange(vm.globalOffset(m.paragraph.toInt(), m.start.toInt()), vm.globalOffset(m.paragraph.toInt(), m.end.toInt()))
+    }
+    val transformation = remember(vm.look, vm.epoch, dark, matchRanges, vm.matchIndex) {
+        DocumentTransformation(vm.paragraphs.toList(), dark, matchRanges, vm.matchIndex)
+    }
     BasicTextField(
         value = value,
         onValueChange = { new ->
@@ -129,17 +163,21 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
             val typed = new.text != old.text
             if (typed) {
                 val change = diff(old.text, new.text)
-                vm.replace(index, change.start, change.oldEnd, change.inserted.replace("\r", ""), new.selection.end)
+                val (p0, s0) = locate(old.text, change.start)
+                val (p1, s1) = locate(old.text, change.oldEnd)
+                vm.replaceRange(p0, s0, p1, s1, change.inserted, old.selection.end)
             }
-            vm.onSelection(index, new.selection.start, new.selection.end, typed)
+            lastSelection[0] = new.selection.end
+            reportSelection(vm, new.text, new.selection, typed)
         },
-        textStyle = baseStyle(paragraph).copy(color = MaterialTheme.colorScheme.onSurface),
+        textStyle = TextStyle(fontFamily = FontFamily.Serif, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         visualTransformation = transformation,
+        onTextLayout = { layout = it },
         decorationBox = { inner ->
             // An empty document would otherwise show nothing to tap.
-            if (value.text.isEmpty() && vm.paragraphs.size == 1) {
-                Text("Start typing", style = baseStyle(paragraph), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (value.text.isEmpty()) {
+                Text("Start typing", style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 12.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             inner()
         },
@@ -147,29 +185,32 @@ private fun ParagraphField(vm: EditorViewModel, index: Int, paragraph: Paragraph
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .focusRequester(focus)
-            .onFocusChanged { if (it.isFocused) vm.onSelection(index, value.selection.start, value.selection.end, false) }
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Backspace &&
-                    value.selection.collapsed && value.selection.start == 0 && index > 0
-                ) { vm.joinWithPrevious(index); true } else false
-            },
+            .onGloballyPositioned { fieldTop = it.positionInParent().y }
+            .onFocusChanged { if (it.isFocused) reportSelection(vm, value.text, value.selection, typed = false) },
     )
+    LaunchedEffect(vm.epoch) {
+        // A new empty document opens with the keyboard up.
+        if (vm.docText.isEmpty()) runCatching { focus.requestFocus() }
+    }
 }
 
-/** The paragraph style's own look (what the whole paragraph has before any span). */
-private fun baseStyle(p: Paragraph) = TextStyle(
-    fontFamily = fontFor(p.family),
-    fontSize = p.sizePoints.sp,
-    fontWeight = if (p.bold) FontWeight.Bold else FontWeight.Normal,
-    fontStyle = if (p.italic) FontStyle.Italic else FontStyle.Normal,
-    textDecoration = if (p.underline) TextDecoration.Underline else TextDecoration.None,
-    textAlign = when (p.align) {
-        Align.LEFT -> TextAlign.Start; Align.RIGHT -> TextAlign.End; Align.CENTRE -> TextAlign.Center; Align.JUSTIFY -> TextAlign.Justify
-    },
-)
+private fun reportSelection(vm: EditorViewModel, text: String, range: TextRange, typed: Boolean) {
+    val (p0, s0) = locate(text, range.min)
+    val (p1, s1) = locate(text, range.max)
+    vm.onSelection(p0, s0, p1, s1, typed)
+}
+
+/** (paragraph, offset in it) of [offset] in a text whose paragraphs are separated by newlines. */
+internal fun locate(text: String, offset: Int): Pair<Int, Int> {
+    var paragraph = 0
+    var lineStart = 0
+    val end = offset.coerceIn(0, text.length)
+    for (i in 0 until end) if (text[i] == '\n') { paragraph++; lineStart = i + 1 }
+    return paragraph to (end - lineStart)
+}
 
 /** Ami Pro faces the phone does not have fall back to the nearest of serif, sans-serif or monospace. */
-private fun fontFor(family: String): FontFamily {
+internal fun fontFor(family: String): FontFamily {
     val f = family.lowercase()
     return when {
         listOf("courier", "mono", "consolas", "lucida console", "terminal").any { it in f } -> FontFamily.Monospace
@@ -178,30 +219,79 @@ private fun fontFor(family: String): FontFamily {
     }
 }
 
-/** Draws the core's character spans (and object placeholders) over the text; offsets are unchanged. */
-private class StyleTransformation(private val p: Paragraph, private val dark: Boolean) : VisualTransformation {
+/**
+ * Draws each paragraph's own look (face, size, alignment, indents, line spacing, character spans) and the search matches over
+ * the one text. Offsets map 1:1, so selection and the caret work as on plain text. When the field is momentarily ahead of
+ * the core (a keystroke in flight) the paragraph count differs and the text is drawn plain for that frame.
+ */
+private class DocumentTransformation(
+    private val paragraphs: List<Paragraph>,
+    private val dark: Boolean,
+    private val matches: List<TextRange>,
+    private val current: Int,
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        // Same length, so offsets map 1:1: an object shows as a box, Ami Pro's hard return (U+2028) as a line break.
-        val shown = text.text.replace(OBJECT_CHAR, Char(0x25A3)).replace(HARD_RETURN, '\n')
-        val styled = AnnotatedString.Builder(shown).apply {
-            for (s in p.spans) {
-                val start = s.start.toInt().coerceIn(0, shown.length)
-                val end = s.end.toInt().coerceIn(start, shown.length)
-                if (start == end) continue
-                addStyle(
-                    SpanStyle(
-                        fontWeight = s.bold?.let { if (it) FontWeight.Bold else FontWeight.Normal },
-                        fontStyle = s.italic?.let { if (it) FontStyle.Italic else FontStyle.Normal },
-                        textDecoration = combine(s.underline, s.strikethrough),
-                        fontSize = s.sizePoints?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
-                        fontFamily = s.family?.let(::fontFor),
-                        color = s.colour?.let { c -> Color(0xFF000000.toInt() or c.toInt()).takeUnless { dark && it.luminance() < 0.15f } } ?: Color.Unspecified,
-                    ),
-                    start, end,
-                )
+        val raw = text.text
+        // An object shows as a box, Ami Pro's hard return (U+2028) as a line break; both are one character, so offsets are unchanged.
+        val shown = raw.replace(OBJECT_CHAR, Char(0x25A3)).replace(HARD_RETURN, '\n')
+        val builder = AnnotatedString.Builder(shown)
+        val lines = raw.split('\n')
+        if (lines.size == paragraphs.size) {
+            var start = 0
+            for ((i, line) in lines.withIndex()) {
+                val p = paragraphs[i]
+                val end = start + line.length
+                val big = (p.spans.mapNotNull { it.sizePoints }.maxOrNull() ?: 0f).coerceAtLeast(p.sizePoints)
+                if (end > start) {
+                    builder.addStyle(
+                        SpanStyle(
+                            fontFamily = fontFor(p.family), fontSize = p.sizePoints.sp,
+                            fontWeight = if (p.bold) FontWeight.Bold else FontWeight.Normal,
+                            fontStyle = if (p.italic) FontStyle.Italic else FontStyle.Normal,
+                            textDecoration = if (p.underline) TextDecoration.Underline else TextDecoration.None,
+                        ),
+                        start, end,
+                    )
+                }
+                if (start < shown.length) {
+                    // The newline that ends the paragraph is part of it and makes a short last line: a small gap between paragraphs.
+                    if (end < shown.length) builder.addStyle(SpanStyle(fontSize = 4.sp), end, end + 1)
+                    builder.addStyle(
+                        ParagraphStyle(
+                            textAlign = when (p.align) { Align.LEFT -> TextAlign.Start; Align.RIGHT -> TextAlign.End; Align.CENTRE -> TextAlign.Center; Align.JUSTIFY -> TextAlign.Justify },
+                            lineHeight = if (p.lineSpacingFactor == 1f) androidx.compose.ui.unit.TextUnit.Unspecified else (big * 1.2f * p.lineSpacingFactor).sp,
+                            textIndent = TextIndent(((p.indentLeft + p.indentFirst) / 20f).sp, (p.indentLeft / 20f).sp),
+                        ),
+                        start, (end + 1).coerceAtMost(shown.length),
+                    )
+                }
+                for (s in p.spans) {
+                    val from = (start + s.start.toInt()).coerceIn(start, end)
+                    val to = (start + s.end.toInt()).coerceIn(from, end)
+                    if (from == to) continue
+                    builder.addStyle(
+                        SpanStyle(
+                            fontWeight = s.bold?.let { if (it) FontWeight.Bold else FontWeight.Normal },
+                            fontStyle = s.italic?.let { if (it) FontStyle.Italic else FontStyle.Normal },
+                            textDecoration = combine(s.underline, s.strikethrough),
+                            fontSize = s.sizePoints?.sp ?: androidx.compose.ui.unit.TextUnit.Unspecified,
+                            fontFamily = s.family?.let(::fontFor),
+                            color = s.colour?.let { c -> Color(0xFF000000.toInt() or c.toInt()).takeUnless { dark && it.luminance() < 0.15f } } ?: Color.Unspecified,
+                        ),
+                        from, to,
+                    )
+                }
+                start = end + 1
             }
-        }.toAnnotatedString()
-        return TransformedText(styled, OffsetMapping.Identity)
+        }
+        for ((i, m) in matches.withIndex()) {
+            val from = m.start.coerceIn(0, shown.length); val to = m.end.coerceIn(from, shown.length)
+            if (from < to) builder.addStyle(
+                SpanStyle(background = if (i == current) Color(0xFFFFB300).copy(alpha = 0.75f) else Color(0xFFFFEE58).copy(alpha = 0.45f)),
+                from, to,
+            )
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 
     private fun combine(underline: Boolean?, strike: Boolean?): TextDecoration? {
@@ -228,5 +318,5 @@ private fun diff(old: String, new: String): Change {
     return Change(prefix, old.length - suffix, new.substring(prefix, new.length - suffix))
 }
 
-private val OBJECT_CHAR = Char(0xFFFC)
+internal val OBJECT_CHAR = Char(0xFFFC)
 private val HARD_RETURN = Char(0x2028)

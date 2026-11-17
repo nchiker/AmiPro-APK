@@ -123,12 +123,14 @@ private fun App(vm: EditorViewModel) {
     val updater = (context.applicationContext as AmiProApp).updater
     val appState = context.applicationContext as AmiProApp
     var showTheme by rememberSaveable { mutableStateOf(false) }
+    var showObjects by rememberSaveable { mutableStateOf(false) }
     var showUpdates by rememberSaveable { mutableStateOf(false) }
     val openUpdates = { updater.reset(); showUpdates = true; updater.check() }
     val print = {
         val activity = context as android.app.Activity
         val printer = activity.getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
-        printer.print(vm.name.ifBlank { "Document" }, DocumentPrintAdapter(activity, vm.name, vm.paragraphs.toList()), null)
+        val data = vm.printData()
+        if (data != null) printer.print(vm.name.ifBlank { "Document" }, DocumentPrintAdapter(activity, vm.name, data), printAttributesFor(data.setup))
         Unit
     }
     LaunchedEffect(vm.copyRequest) {
@@ -137,7 +139,7 @@ private fun App(vm: EditorViewModel) {
     if (vm.isOpen) {
         var confirmClose by remember { mutableStateOf(false) }
         BackHandler { if (vm.edited) confirmClose = true else vm.close() }
-        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onTheme = { showTheme = true }, onClose = { if (vm.edited) confirmClose = true else vm.close() })
+        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onTheme = { showTheme = true }, onObjects = { showObjects = true }, onClose = { if (vm.edited) confirmClose = true else vm.close() })
         if (confirmClose) AlertDialog(
             onDismissRequest = { confirmClose = false },
             title = { Text("Close without saving?") },
@@ -181,6 +183,7 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.pendingOpen = null }) { Text("Keep editing") } },
         )
     }
+    if (showObjects && vm.isOpen) ObjectsDialog(vm) { showObjects = false }
     if (showTheme) AlertDialog(
         onDismissRequest = { showTheme = false },
         title = { Text("Appearance") },

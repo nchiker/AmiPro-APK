@@ -207,7 +207,7 @@ pub fn open_document(
     });
     if has_objects || has_frames {
         notes.push(
-            "This document has frames, tables or pictures. They are kept when you save, but are not shown here."
+            "This document has frames, tables or pictures (shown as boxes). They are kept when you save. Tap one, or use More > Pictures and tables, to look at it."
                 .to_string(),
         );
     }
@@ -1099,5 +1099,25 @@ mod tests {
         let sample = open_sample().page_setup();
         assert!(sample.width_twips > 0 && sample.margin_left >= 0);
         eprintln!("sample setup: header {} footer {}", sample.header.len(), sample.footer.len());
+    }
+
+    /// Opt-in: lists, for every SAM under AMIPRO_SCAN_DIR, how many pictures it has and how many of them the phone can draw.
+    #[test]
+    #[ignore = "reads a folder given by AMIPRO_SCAN_DIR"]
+    fn picture_scan() {
+        let Some(dir) = std::env::var_os("AMIPRO_SCAN_DIR") else { return };
+        let mut stack = vec![std::path::PathBuf::from(dir)];
+        while let Some(path) = stack.pop() {
+            for entry in std::fs::read_dir(&path).unwrap().flatten() {
+                let p = entry.path();
+                if p.is_dir() { stack.push(p); continue }
+                if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("sam")) { continue }
+                let Ok(doc) = open_document(std::fs::read(&p).unwrap(), "x".into(), None) else { continue };
+                let pictures: Vec<_> = doc.objects().into_iter().filter(|o| o.kind == extras::ObjectKind::Picture).collect();
+                if pictures.is_empty() { continue }
+                let drawn = pictures.iter().filter(|o| doc.picture_image(o.paragraph, o.offset).is_some()).count();
+                eprintln!("PICTURES {} total={} drawn={}", p.display(), pictures.len(), drawn);
+            }
+        }
     }
 }

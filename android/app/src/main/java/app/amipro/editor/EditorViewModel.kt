@@ -16,7 +16,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.amipro_mobile.AmiDoc
+import uniffi.amipro_mobile.Align
 import uniffi.amipro_mobile.AmiException
+import uniffi.amipro_mobile.FoundText
+import uniffi.amipro_mobile.LineSpacingChoice
+import uniffi.amipro_mobile.ObjectInfo
+import uniffi.amipro_mobile.PictureImage
+import uniffi.amipro_mobile.TableView
+import androidx.compose.ui.text.TextRange
 import uniffi.amipro_mobile.Attr
 import uniffi.amipro_mobile.FormatState
 import uniffi.amipro_mobile.StyleInfo
@@ -32,8 +39,10 @@ class PasswordRequest(val uri: Uri, val wrong: Boolean)
 
 private enum class AfterLosses { SAVE, COPY }
 
-/** Where the caret or selection is: paragraph index and UTF-16 offsets. */
-class FocusPos(val paragraph: Int, val start: Int, val end: Int)
+/** Where the caret or selection is: from (paragraph [p0], UTF-16 offset [s0]) to ([p1], [s1]), in document order. */
+class FocusPos(val p0: Int, val s0: Int, val p1: Int, val s1: Int) {
+    val collapsed get() = p0 == p1 && s0 == s1
+}
 
 /** Formatting chosen at a caret, applied to the text typed next (as Ami Pro does); null = leave as is. */
 data class Pending(
@@ -42,8 +51,11 @@ data class Pending(
     val underline: Boolean? = null,
     val strike: Boolean? = null,
     val size: Float? = null,
+    val family: String? = null,
+    /** 0xRRGGBB */
+    val colour: Int? = null,
 ) {
-    val any get() = bold != null || italic != null || underline != null || strike != null || size != null
+    val any get() = bold != null || italic != null || underline != null || strike != null || size != null || family != null || colour != null
 }
 
 /**
@@ -96,8 +108,11 @@ class EditorViewModel(private val app: Application) {
         private set
     var styles by mutableStateOf<List<StyleInfo>>(emptyList())
         private set
-    /** Where the caret should go after the paragraph list changed: paragraph, UTF-16 offset. */
-    var caretTarget by mutableStateOf<Pair<Int, Int>?>(null)
+    /** Where the caret should go after the whole text was re-read: an offset in [docText]. */
+    var caretTarget by mutableStateOf<Int?>(null)
+    /** Bumped when only the look (not the text) of paragraphs changed, so the field restyles. */
+    var look by mutableStateOf(0)
+        private set
     /** Bumped whenever the paragraph list changed shape or was re-read from the core, so every field reloads its text. */
     var epoch by mutableStateOf(0)
         private set
@@ -191,7 +206,7 @@ class EditorViewModel(private val app: Application) {
         refreshAll()
         edited = false
         isOpen = true
-        caretTarget = 0 to 0
+        caretTarget = 0
     }
 
     /** A file chosen in the picker or sent by another app: asks first if edits would be lost. */
@@ -200,18 +215,31 @@ class EditorViewModel(private val app: Application) {
     }
 
 
+    /** The whole text: paragraphs joined by a newline. The editor's one text field holds exactly this. */
+    val docText: String get() = paragraphs.joinToString("\n") { it.text }
+
+    /** Offset in [docText] of ([paragraph], [offset]). */
+    fun globalOffset(paragraph: Int, offset: Int): Int {
+        var at = 0
+        for (i in 0 until minOf(paragraph, paragraphs.size)) at += paragraphs[i].text.length + 1
+        return at + offset
+    }
+
+    /** The paragraph the caret (or the start of the selection) is in. */
+    val focusParagraph: Paragraph? get() = focus?.let { paragraphs.getOrNull(it.p0) }
+
     /** Tracks the caret or selection; [typed] is true when this move only follows typing (a pending format stays). */
-    fun onSelection(index: Int, start: Int, end: Int, typed: Boolean) {
-        val moved = focus?.let { it.paragraph != index || it.start != start || it.end != end } ?: true
+    fun onSelection(p0: Int, s0: Int, p1: Int, s1: Int, typed: Boolean) {
+        val moved = focus?.let { it.p0 != p0 || it.s0 != s0 || it.p1 != p1 || it.s1 != s1 } ?: true
         if (!typed && moved) pending = Pending()
-        focus = FocusPos(index, minOf(start, end), maxOf(start, end))
+        focus = FocusPos(p0, s0, p1, s1)
         updateFormat()
     }
 
     private fun updateFormat() {
         val d = doc
         val f = focus
-        format = if (d != null && f != null) d.formatState(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt()) else null
+        format = if (d != null && f != null) d.formatStateBetween(f.p0.toUInt(), f.s0.toUInt(), f.p1.toUInt(), f.s1.toUInt()) else null
     }
 
     private fun applyPending(d: AmiDoc, index: Int, from: Int, to: Int) {
@@ -221,14 +249,25 @@ class EditorViewModel(private val app: Application) {
         p.italic?.let { d.setAttribute(i, a, b, Attr.ITALIC, it) }
         p.underline?.let { d.setAttribute(i, a, b, Attr.UNDERLINE, it) }
         p.strike?.let { d.setAttribute(i, a, b, Attr.STRIKETHROUGH, it) }
-        p.size?.let { d.setSize(i, a, b, it) }
+        if (p.size != null || p.family != null || p.colour != null) d.setFontBetween(i, a, i, b, p.family, p.size, p.colour?.toUInt())
     }
 
-    private fun afterFormat(index: Int) {
-        doc?.paragraph(index.toUInt())?.let { paragraphs[index] = it }
+    /** Re-reads every paragraph's look from the core without touching the text field. */
+    private fun refreshParagraphs() {
+        val d = doc ?: return
+        val all = d.paragraphs()
+        paragraphs.clear(); paragraphs.addAll(all)
+        look++
+    }
+
+    private fun afterFormat() {
+        refreshParagraphs()
         edited = true
         updateFormat()
+        refreshMatches()
     }
+
+    private fun failure(what: String, e: Exception) { message = "$what: ${(e as? AmiException.Failed)?.detail ?: e.message}" }
 
     /** A bold/italic/underline/strikethrough button: over the selection, or for the next typed text at a caret. */
     fun toggle(attr: Attr) {
@@ -241,13 +280,11 @@ class EditorViewModel(private val app: Application) {
             Attr.UNDERLINE -> pending.underline ?: cur.underline
             Attr.STRIKETHROUGH -> pending.strike ?: cur.strikethrough
         }
-        if (f.start != f.end) {
+        if (!f.collapsed) {
             try {
-                d.setAttribute(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt(), attr, !now)
-                afterFormat(f.paragraph)
-            } catch (e: Exception) {
-                message = "Could not format: ${(e as? AmiException.Failed)?.detail ?: e.message}"
-            }
+                d.setAttributeBetween(f.p0.toUInt(), f.s0.toUInt(), f.p1.toUInt(), f.s1.toUInt(), attr, !now)
+                afterFormat()
+            } catch (e: Exception) { failure("Could not format", e) }
         } else {
             pending = when (attr) {
                 Attr.BOLD -> pending.copy(bold = !now)
@@ -261,90 +298,188 @@ class EditorViewModel(private val app: Application) {
     /** The size now shown: a pending size at a caret, else the selection's. */
     val shownSize: Float get() = pending.size ?: format?.sizePoints ?: 12f
 
-    fun changeSize(delta: Float) {
+    fun changeSize(delta: Float) = setFont(size = (shownSize + delta).coerceIn(6f, 72f))
+
+    /** Face, size or colour (0xRRGGBB) over the selection, or for the next typed text at a caret. */
+    fun setFont(family: String? = null, size: Float? = null, colour: Int? = null) {
         val d = doc ?: return
         val f = focus ?: return
-        val size = (shownSize + delta).coerceIn(6f, 72f)
-        if (f.start != f.end) {
+        if (!f.collapsed) {
             try {
-                d.setSize(f.paragraph.toUInt(), f.start.toUInt(), f.end.toUInt(), size)
-                afterFormat(f.paragraph)
-            } catch (e: Exception) {
-                message = "Could not change the size: ${(e as? AmiException.Failed)?.detail ?: e.message}"
-            }
+                d.setFontBetween(f.p0.toUInt(), f.s0.toUInt(), f.p1.toUInt(), f.s1.toUInt(), family, size, colour?.toUInt())
+                afterFormat()
+            } catch (e: Exception) { failure("Could not change the font", e) }
         } else {
-            pending = pending.copy(size = size)
+            pending = pending.copy(family = family ?: pending.family, size = size ?: pending.size, colour = colour ?: pending.colour)
         }
     }
 
-    /** Gives the focused paragraph one of the document's styles. */
-    fun setStyle(id: ULong) {
+    /** Every face worth offering for this document. */
+    fun fonts(): List<String> = doc?.fonts().orEmpty()
+
+    /** Gives the paragraphs of the selection one of the document's styles. */
+    fun setStyle(id: ULong) = onParagraphs("change the style") { d, a, b -> for (i in a..b) d.setParagraphStyle(i.toUInt(), id); pending = Pending() }
+
+    fun setAlignment(align: Align) = onParagraphs("align") { d, a, b -> d.setAlignment(a.toUInt(), b.toUInt(), align) }
+
+    /** Moves the left indent of the selected paragraphs by [deltaTwips] (a quarter inch is 360). */
+    fun changeIndent(deltaTwips: Int) = onParagraphs("change the indent") { d, a, b ->
+        // Every paragraph keeps its own difference: move each from its own value.
+        for (i in a..b) {
+            val now = paragraphs.getOrNull(i)?.indentLeft ?: 0
+            d.setIndents(i.toUInt(), i.toUInt(), (now + deltaTwips).coerceAtLeast(0), null, null)
+        }
+    }
+
+    fun setLineSpacing(choice: LineSpacingChoice) = onParagraphs("change the spacing") { d, a, b -> d.setLineSpacing(a.toUInt(), b.toUInt(), choice) }
+
+    private fun onParagraphs(what: String, change: (AmiDoc, Int, Int) -> Unit) {
         val d = doc ?: return
         val f = focus ?: return
         try {
-            d.setParagraphStyle(f.paragraph.toUInt(), id)
-            pending = Pending()
-            afterFormat(f.paragraph)
-        } catch (e: Exception) {
-            message = "Could not change the style: ${(e as? AmiException.Failed)?.detail ?: e.message}"
-        }
+            change(d, f.p0, f.p1)
+            afterFormat()
+        } catch (e: Exception) { failure("Could not $what", e) }
     }
 
+    /** Re-reads everything (the text too): after a change the field cannot have made itself. */
     private fun refreshAll() {
         val d = doc ?: return
         val all = d.paragraphs()
         paragraphs.clear(); paragraphs.addAll(all)
-        if (focus != null && focus!!.paragraph >= all.size) { focus = null; format = null }
+        if (focus != null && focus!!.p1 >= all.size) { focus = null; format = null }
         edited = d.isEdited()
         epoch++
+        look++
     }
 
-    /** One text change in paragraph [index]: [start, end) UTF-16 replaced by [text]. */
-    fun replace(index: Int, start: Int, end: Int, text: String, caretAfter: Int) {
+    /**
+     * One text change in the field: ([p0], [s0]) to ([p1], [s1]) replaced by [text], which may hold newlines (a split) and
+     * may start or end in other paragraphs (a join). [caretBefore] is where the caret goes if the change is refused.
+     */
+    fun replaceRange(p0: Int, s0: Int, p1: Int, s1: Int, text: String, caretBefore: Int) {
         val d = doc ?: return
+        // A pasted object marker would be an object with nothing behind it.
+        val clean = text.replace("\r", "").replace(OBJECT_CHAR.toString(), "")
         try {
-            val before = d.paragraphCount().toInt()
-            d.replaceText(index.toUInt(), start.toUInt(), end.toUInt(), text)
-            if (pending.any && text.isNotEmpty() && !text.contains('\n') && focus?.paragraph == index) applyPending(d, index, start, start + text.length)
-            if (d.paragraphCount().toInt() != before || text.contains('\n')) {
-                refreshAll()
-                // Enter put the caret at the start of the new paragraph.
-                caretTarget = if (text.contains('\n')) (index + text.count { it == '\n' }) to 0 else index to caretAfter
-            } else {
-                d.paragraph(index.toUInt())?.let { paragraphs[index] = it }
-                edited = true
-            }
+            d.replaceRange(p0.toUInt(), s0.toUInt(), p1.toUInt(), s1.toUInt(), clean)
+            if (pending.any && clean.isNotEmpty() && '\n' !in clean && p0 == p1) applyPending(d, p0, s0, s0 + clean.length)
+            if (p0 != p1 || '\n' in clean) refreshParagraphs()
+            else { d.paragraph(p0.toUInt())?.let { paragraphs[p0] = it }; look++ }
+            edited = true
+            refreshMatches()
         } catch (e: AmiException.ProtectedObject) {
             // A picture, frame or table is kept untouched: put the text back and leave the caret where it was.
-            message = "That is a picture, frame or table AmiPro cannot show. It is kept; edit the text around it."
+            message = "That is a picture, frame or table AmiPro cannot show. It is kept; edit the text around it, or delete it from the Pictures and tables list."
             refreshAll()
-            caretTarget = index to end
+            caretTarget = caretBefore
         } catch (e: Exception) {
-            message = "Could not make that change: ${(e as? AmiException.Failed)?.detail ?: e.message}"
+            failure("Could not make that change", e)
             refreshAll()
+            caretTarget = caretBefore
         }
     }
 
-    /** Backspace at the start of paragraph [index]. */
-    fun joinWithPrevious(index: Int) {
-        val d = doc ?: return
-        if (index == 0) return
-        try {
-            val offset = paragraphs[index - 1].text.length
-            if (d.joinWithPrevious(index.toUInt())) {
-                refreshAll()
-                caretTarget = (index - 1) to offset
-            }
-        } catch (e: Exception) {
-            message = "Could not join: ${(e as? AmiException.Failed)?.detail ?: e.message}"
+    // ---- find and replace ----
+    var findOpen by mutableStateOf(false)
+    var findQuery by mutableStateOf("")
+    var findMatchCase by mutableStateOf(false)
+    var findWholeWord by mutableStateOf(false)
+    var replaceWith by mutableStateOf("")
+    var matches by mutableStateOf<List<FoundText>>(emptyList())
+        private set
+    var matchIndex by mutableStateOf(-1)
+        private set
+    /** A range of [docText] the field should select and scroll to. */
+    var selectRequest by mutableStateOf<TextRange?>(null)
+
+    fun openFind() { findOpen = true; refreshMatches() }
+    fun closeFind() { findOpen = false; matches = emptyList(); matchIndex = -1 }
+
+    private fun globalRange(m: FoundText) = TextRange(globalOffset(m.paragraph.toInt(), m.start.toInt()), globalOffset(m.paragraph.toInt(), m.end.toInt()))
+
+    /** Looks again with the current options, keeping the match nearest the old one. */
+    fun refreshMatches() {
+        val d = doc
+        if (!findOpen || d == null || findQuery.isEmpty()) { matches = emptyList(); matchIndex = -1; return }
+        val old = matches.getOrNull(matchIndex)
+        matches = d.find(findQuery, findMatchCase, findWholeWord)
+        matchIndex = when {
+            matches.isEmpty() -> -1
+            old == null -> 0
+            else -> matches.indexOfFirst { it.paragraph > old.paragraph || (it.paragraph == old.paragraph && it.start >= old.start) }.let { if (it < 0) 0 else it }
         }
+    }
+
+    /** Runs the search from the caret and selects the first match after it. */
+    fun find() {
+        refreshMatches()
+        if (matches.isEmpty()) { message = "No matches"; return }
+        val from = focus?.let { globalOffset(it.p1, it.s1) } ?: 0
+        val next = matches.indexOfFirst { globalRange(it).start >= from }.let { if (it < 0) 0 else it }
+        matchIndex = next
+        selectRequest = globalRange(matches[next])
+    }
+
+    fun step(forward: Boolean) {
+        if (matches.isEmpty()) { find(); return }
+        matchIndex = (matchIndex + if (forward) 1 else -1 + matches.size) % matches.size
+        selectRequest = globalRange(matches[matchIndex])
+    }
+
+    fun replaceCurrent() {
+        val m = matches.getOrNull(matchIndex) ?: return find()
+        val at = globalRange(m).start
+        replaceRange(m.paragraph.toInt(), m.start.toInt(), m.paragraph.toInt(), m.end.toInt(), replaceWith, at)
+        epoch++ // the text changed under the field
+        caretTarget = at + replaceWith.length
+        refreshMatches()
+        if (matches.isNotEmpty()) {
+            matchIndex = matches.indexOfFirst { globalRange(it).start >= at + replaceWith.length }.let { if (it < 0) 0 else it }
+            selectRequest = globalRange(matches[matchIndex])
+        }
+    }
+
+    fun replaceEverything() {
+        val d = doc ?: return
+        if (findQuery.isEmpty()) return
+        try {
+            val n = d.replaceAll(findQuery, replaceWith, findMatchCase, findWholeWord).toInt()
+            message = if (n == 0) "No matches" else "Replaced $n"
+            if (n > 0) { refreshAll(); edited = true; caretTarget = focus?.let { globalOffset(it.p1, it.s1) } ?: 0 }
+            refreshMatches()
+        } catch (e: Exception) { failure("Could not replace", e) }
+    }
+
+    // ---- pictures, frames and tables ----
+    fun objects(): List<ObjectInfo> = doc?.objects().orEmpty()
+    fun pictureImage(o: ObjectInfo): PictureImage? = doc?.pictureImage(o.paragraph, o.offset)
+    fun tableText(o: ObjectInfo): TableView? = doc?.tableText(o.paragraph, o.offset)
+    fun frameText(o: ObjectInfo): String? = doc?.frameText(o.paragraph, o.offset)
+
+    /** Removes the object and what it owns (one undo step; Undo brings it back). */
+    fun deleteObject(o: ObjectInfo) {
+        val d = doc ?: return
+        try {
+            d.deleteObject(o.paragraph, o.offset)
+            refreshAll()
+            edited = true
+            caretTarget = globalOffset(o.paragraph.toInt(), o.offset.toInt())
+            message = "Deleted. Undo brings it back."
+        } catch (e: Exception) { failure("Could not delete", e) }
+    }
+
+    /** What printing needs, read once. */
+    fun printData(): PrintData? {
+        val d = doc ?: return null
+        return PrintData(paragraphs.toList(), d.objects(), d.pageSetup(), { o -> d.pictureImage(o.paragraph, o.offset) }, { o -> d.tableText(o.paragraph, o.offset) }, { o -> d.frameText(o.paragraph, o.offset) })
     }
 
     fun undo() = history { it.undo() }
     fun redo() = history { it.redo() }
     private fun history(step: (AmiDoc) -> Boolean) {
         val d = doc ?: return
-        if (step(d)) { refreshAll(); edited = true }
+        if (step(d)) { refreshAll(); edited = true; refreshMatches() }
     }
 
     /** Runs [after] straight away, or once the user has accepted what a SAM would lose. */
@@ -434,6 +569,7 @@ class EditorViewModel(private val app: Application) {
     }
 
     fun close() {
-        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false; isNew = false; focus = null; format = null; pending = Pending()
+        doc?.close(); doc = null; source = null; paragraphs.clear(); isOpen = false; edited = false; isNew = false; focus = null; format = null; pending = Pending(); closeFind()
     }
 }
+
