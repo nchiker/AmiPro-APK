@@ -59,6 +59,11 @@
 - **Appearance** (start screen and More menu): Follow the phone (default) / Light / Dark, kept in app preferences (`AmiProApp.themeChoice`). Window and status/navigation bars follow the choice (a Light override on a dark phone first showed invisible status icons; fixed). Checked: Light override on the dark phone, dark and light start screens, editor in light; default reset to Follow the phone.
 - **Print** puts a 5 pt gap between paragraphs (checked in the preview: still 4 pages of NOTEBOOK.SAM).
 
+## Released: 0.2.0, and the in-app update tested end to end (2026-11-17)
+- **v0.2.0 is published** on GitHub (`AmiPro-0.2.0.apk` + `SHA256SUMS`, notes in `dist/RELEASE_NOTES_0.2.0.md`), same signing certificate as 0.1.0 (`9a387c70...`), SHA-256 `2abf612c...`. `main` and tag `v0.2.0` pushed.
+- **Update test on the 4a (release build):** installed 0.2.0 by adb, published a throwaway v0.2.1 (versionCode 3), then in the app: Check for updates found 0.2.1 with its notes; Download passed the checksum and signature checks; Install opened Android's "allow from this source" page for AmiPro, then Android's "Do you want to update this app?"; Cancel returned to Install; Update installed 0.2.1 over 0.2.0 with data kept (recents still there). Google Play Protect asked for a scan on the update; "Install without scanning" was used (nothing was uploaded to Google). Expect that prompt on real phones too.
+- The throwaway v0.2.1 release and tag were deleted afterwards; the 4a now runs 0.2.1 (versionCode 3, which cannot be installed under: reinstalling 0.2.0 on it needs an uninstall first). The "install unknown apps" permission for AmiPro on the 4a was reset. Not tested: an update that fails the signature check, a dropped connection mid-download.
+
 ## Not done
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).
