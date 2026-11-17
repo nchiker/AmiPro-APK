@@ -63,7 +63,7 @@ import uniffi.amipro_mobile.Paragraph
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onCopy: () -> Unit, onPrint: () -> Unit, onUpdates: () -> Unit, onClose: () -> Unit) {
+fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onCopy: () -> Unit, onPrint: () -> Unit, onUpdates: () -> Unit, onTheme: () -> Unit, onClose: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm.message) {
@@ -86,6 +86,7 @@ fun EditorScreen(vm: EditorViewModel, onOpen: () -> Unit, onNew: () -> Unit, onC
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
                         DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
+                        DropdownMenuItem(text = { Text("Appearance...") }, onClick = { menu = false; onTheme() })
                         DropdownMenuItem(text = { Text("Check for updates...") }, onClick = { menu = false; onUpdates() })
                     }
                 },

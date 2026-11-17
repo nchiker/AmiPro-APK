@@ -36,7 +36,7 @@ class DocumentPrintAdapter(
     private val jobName: String,
     private val paragraphs: List<Paragraph>,
 ) : PrintDocumentAdapter() {
-    private class Piece(val layout: StaticLayout, val firstLine: Int, val lastLine: Int)
+    private class Piece(val layout: StaticLayout, val firstLine: Int, val lastLine: Int, val gap: Int)
 
     private var attributes: PrintAttributes? = null
     private var pages: List<List<Piece>> = emptyList()
@@ -84,6 +84,7 @@ class DocumentPrintAdapter(
         canvas.translate(54f, 54f)
         var y = 0f
         for (p in pieces) {
+            y += p.gap
             val top = p.layout.getLineTop(p.firstLine)
             val bottom = p.layout.getLineBottom(p.lastLine)
             canvas.save()
@@ -105,7 +106,8 @@ class DocumentPrintAdapter(
             var line = 0
             while (line < layout.lineCount) {
                 var last = line - 1
-                var h = used
+                val gap = if (line == 0 && used > 0) PARAGRAPH_GAP else 0
+                var h = used + gap
                 while (last + 1 < layout.lineCount) {
                     val lh = layout.getLineBottom(last + 1) - layout.getLineTop(last + 1)
                     if (h + lh > height && (h > 0)) break
@@ -114,7 +116,7 @@ class DocumentPrintAdapter(
                 if (last < line) { // nothing fits on this page any more
                     pages += current; current = mutableListOf(); used = 0; continue
                 }
-                current += Piece(layout, line, last)
+                current += Piece(layout, line, last, gap)
                 used = h
                 line = last + 1
                 if (line < layout.lineCount) { pages += current; current = mutableListOf(); used = 0 }
@@ -158,6 +160,8 @@ class DocumentPrintAdapter(
             .setIncludePad(false)
             .build()
     }
+
+    private companion object { const val PARAGRAPH_GAP = 5 }
 
     /** Same rule as the screen: the nearest of serif, sans-serif and monospace. */
     private fun generic(family: String): String {

@@ -11,8 +11,8 @@ android {
         applicationId = "app.amipro.editor"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // Only the 64-bit phone ABI is built (build-rust.sh); add x86_64 there for an emulator.
         ndk { abiFilters += listOf("arm64-v8a") }
     }

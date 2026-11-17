@@ -53,6 +53,12 @@
 - **Checked on the 4a (2026-11-17, debug):** recent files: listed after an open, still there after force-stop, reopens, remove works, a deleted file gives "That file is no longer available" and the row is dropped. Print: NOTEBOOK.SAM (97 KB) previews as 4 Letter pages with bold headings and serif body, same text as the screen. Check for updates: reaches GitHub and says "You have the newest version (0.1.0)".
 - **Not checked:** Download and Install (needs a published release with a higher versionCode, signed with the release key; the debug build could only test the refusal), the unknown-sources page, Save as PDF to a file, landscape, the protected-file-from-recents prompt, and the release (R8) build. Print has no gap between paragraphs yet (the screen has a small one).
 
+## Added: version 0.2.0, start screen, theme, print spacing (verified on the 4a, debug)
+- Version 0.2.0 (versionCode 2) in `android/app/build.gradle.kts`. Not built as a release or published; the release notes and "no network access" line in `dist/RELEASE_NOTES.md` need rewriting for it (network only on the update check).
+- **Start screen** restyled after the Stack app: Open and New as action rows with a tinted icon disc, Recent list (empty-state line), Appearance and Check for updates rows at the bottom. Fixed Stack-like blue palette in light and dark (no wallpaper colours any more).
+- **Appearance** (start screen and More menu): Follow the phone (default) / Light / Dark, kept in app preferences (`AmiProApp.themeChoice`). Window and status/navigation bars follow the choice (a Light override on a dark phone first showed invisible status icons; fixed). Checked: Light override on the dark phone, dark and light start screens, editor in light; default reset to Follow the phone.
+- **Print** puts a 5 pt gap between paragraphs (checked in the preview: still 4 pages of NOTEBOOK.SAM).
+
 ## Not done
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
 - Phone-saved files are checked with the Linux version, not the Ami Pro 3.1 VM (owner's decision).

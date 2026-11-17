@@ -19,6 +19,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,9 +58,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+
+private val Blue = Color(0xFF1A73E8)
+private val LightScheme = lightColorScheme(
+    primary = Blue, onPrimary = Color.White, primaryContainer = Color(0xFFDCECF9), onPrimaryContainer = Color(0xFF0B3D91),
+    background = Color.White, surface = Color.White, onSurface = Color(0xFF202124), onSurfaceVariant = Color(0xFF5F6368),
+    surfaceVariant = Color(0xFFF1F3F4), outlineVariant = Color(0xFFDADCE0),
+)
+private val DarkScheme = darkColorScheme(
+    primary = Color(0xFF8AB4F8), onPrimary = Color(0xFF062E6F), primaryContainer = Color(0xFF1F3A5F), onPrimaryContainer = Color(0xFFD2E3FC),
+    background = Color(0xFF17181A), surface = Color(0xFF17181A), onSurface = Color(0xFFE8EAED), onSurfaceVariant = Color(0xFF9AA0A6),
+    surfaceVariant = Color(0xFF26282B), outlineVariant = Color(0xFF3C4043),
+)
 
 class MainActivity : ComponentActivity() {
     private val vm: EditorViewModel get() = (application as AmiProApp).editor
@@ -60,12 +84,17 @@ class MainActivity : ComponentActivity() {
         // A rotation or process restore re-delivers the original intent: only act on a fresh launch.
         if (savedInstanceState == null) handle(intent)
         setContent {
-            val dark = isSystemInDarkTheme()
-            val context = LocalContext.current
-            val scheme = if (android.os.Build.VERSION.SDK_INT >= 31) {
-                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            } else if (dark) darkColorScheme() else lightColorScheme()
-            MaterialTheme(colorScheme = scheme) { Surface(Modifier.fillMaxSize()) { App(vm) } }
+            val choice = (application as AmiProApp).themeChoice
+            val dark = when (choice) { ThemeChoice.SYSTEM -> isSystemInDarkTheme(); ThemeChoice.LIGHT -> false; ThemeChoice.DARK -> true }
+            val view = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.SideEffect {
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable((if (dark) DarkScheme else LightScheme).background.toArgb()))
+                @Suppress("DEPRECATION") run { window.statusBarColor = android.graphics.Color.TRANSPARENT; window.navigationBarColor = android.graphics.Color.TRANSPARENT }
+                androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark
+                }
+            }
+            MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme) { Surface(Modifier.fillMaxSize()) { App(vm) } }
         }
     }
 
@@ -92,6 +121,8 @@ private fun App(vm: EditorViewModel) {
     }
     val context = LocalContext.current
     val updater = (context.applicationContext as AmiProApp).updater
+    val appState = context.applicationContext as AmiProApp
+    var showTheme by rememberSaveable { mutableStateOf(false) }
     var showUpdates by rememberSaveable { mutableStateOf(false) }
     val openUpdates = { updater.reset(); showUpdates = true; updater.check() }
     val print = {
@@ -106,7 +137,7 @@ private fun App(vm: EditorViewModel) {
     if (vm.isOpen) {
         var confirmClose by remember { mutableStateOf(false) }
         BackHandler { if (vm.edited) confirmClose = true else vm.close() }
-        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onClose = { if (vm.edited) confirmClose = true else vm.close() })
+        EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onTheme = { showTheme = true }, onClose = { if (vm.edited) confirmClose = true else vm.close() })
         if (confirmClose) AlertDialog(
             onDismissRequest = { confirmClose = false },
             title = { Text("Close without saving?") },
@@ -115,7 +146,7 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { confirmClose = false }) { Text("Keep editing") } },
         )
     } else {
-        StartScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onUpdates = openUpdates, version = updater.installedVersion)
+        StartScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onUpdates = openUpdates, onTheme = { showTheme = true }, version = updater.installedVersion, theme = appState.themeChoice)
     }
     vm.passwordRequest?.let { request ->
         var password by rememberSaveable { mutableStateOf("") }
@@ -150,6 +181,21 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.pendingOpen = null }) { Text("Keep editing") } },
         )
     }
+    if (showTheme) AlertDialog(
+        onDismissRequest = { showTheme = false },
+        title = { Text("Appearance") },
+        text = {
+            Column {
+                ThemeChoice.entries.forEach { choice ->
+                    Row(Modifier.fillMaxWidth().clickable { appState.chooseTheme(choice); showTheme = false }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(selected = appState.themeChoice == choice, onClick = { appState.chooseTheme(choice); showTheme = false })
+                        Text(choice.label)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { showTheme = false }) { Text("Close") } },
+    )
     if (showUpdates) UpdateDialog(updater, context) { showUpdates = false; updater.reset() }
     vm.pendingLosses?.let { losses ->
         AlertDialog(
@@ -162,32 +208,45 @@ private fun App(vm: EditorViewModel) {
     }
 }
 
-/** Open and New, with the documents used before listed underneath (centred as before when there are none). */
+/** One tinted action row in the style of the Stack app: a pastel icon disc, a title and a caption. */
 @Composable
-private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit, onUpdates: () -> Unit, version: String) {
-    val recents = vm.recents
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp),
-        verticalArrangement = if (recents.isEmpty()) Arrangement.spacedBy(16.dp, Alignment.CenterVertically) else Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+private fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, caption: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("AmiPro", style = MaterialTheme.typography.headlineLarge)
-        Button(onClick = onOpen, enabled = !vm.busy) { Text("Open a document") }
-        OutlinedButton(onClick = vm::newDocument, enabled = !vm.busy) { Text("New document") }
-        vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        TextButton(onClick = onUpdates) { Text("Check for updates (version $version)") }
-        if (recents.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Recent", style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        androidx.compose.foundation.layout.Box(
+            Modifier.size(44.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center,
+        ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(caption, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Open and New as action rows, the documents used before underneath, appearance and updates at the bottom. */
+@Composable
+private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit, onUpdates: () -> Unit, onTheme: () -> Unit, version: String, theme: ThemeChoice) {
+    val recents = vm.recents
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        Text("AmiPro", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
+        ActionRow(Icons.Filled.FolderOpen, "Open a document", "Ami Pro .sam or .amipro files", !vm.busy, onOpen)
+        ActionRow(Icons.Filled.NoteAdd, "New document", "Start with a blank page", !vm.busy, vm::newDocument)
+        vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+        HorizontalDivider(Modifier.padding(top = 8.dp))
+        Text("Recent", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp))
+        if (recents.isEmpty()) {
+            Text("Documents you open or save appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp).weight(1f))
+        } else {
             LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                 items(recents.toList(), key = { it.uri.toString() }) { file ->
                     ListItem(
                         modifier = Modifier.clickable(enabled = !vm.busy) { vm.requestOpen(file.uri) },
-                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        leadingContent = { Icon(Icons.Filled.Description, contentDescription = null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = { Icon(Icons.Filled.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                         headlineContent = { Text(file.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                         supportingContent = {
                             Text(
@@ -202,10 +261,12 @@ private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit, onUpdates: () -
                             }
                         },
                     )
-                    HorizontalDivider()
                 }
             }
         }
+        HorizontalDivider()
+        ActionRow(Icons.Filled.Palette, "Appearance", theme.label, true, onTheme)
+        ActionRow(Icons.Filled.SystemUpdate, "Check for updates", "Version $version", true, onUpdates)
     }
 }
 
