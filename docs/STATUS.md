@@ -75,7 +75,7 @@
 - **Checked with the Linux version:** a phone-made file (3 paragraphs, bold, centred, 0.25 in indent, Courier New) went through `sam_round_trip` (main text read back equal, sections 51 of 51) and `loss_check` (no losses). Facade tests: 26 (cross-paragraph replace/copy/format, layout and spacing survive save, face and colour survive save, find/replace one undo step, objects list/delete/undo, picture decoding, page setup). Synthetic picture documents from the Linux repo's test scenarios (not the owner's corpus) were used for the picture checks: PICPASTE.SAM (4 bitmaps, all drawn); charts, drawings and equations are not.
 - **Release build (R8) checked on the 4a:** installed (8.7 MB) after uninstalling the test copy of 0.2.1, opened NOTEBOOK.SAM (97 KB) and typed: median frame 17 ms, 90th percentile 34 ms (the debug build is 70 / 150 ms, so judge typing speed on release). Backspace at a paragraph start joins the paragraphs (adb hardware key).
 - **Not checked on the phone:** Save as PDF to a file, landscape, a real soft-keyboard Backspace, picking a colour from the palette (covered by a facade test), documents much larger than NOTEBOOK.SAM.
-- Version is still 0.2.0 / versionCode 2 (the 4a now runs this release build of 0.2.0 again; the 10a has the published 0.2.0). A release of this work needs versionCode 3 or higher.
+- Released as 0.3.0 (versionCode 3) on 2026-11-17; SHA-256 `747a4bb8...`; same signing certificate.
 
 ## Not done
 - Unchecked: real soft-keyboard Backspace at the start of a paragraph (adb sends a hardware key); selection/IME edge cases; very large documents.
