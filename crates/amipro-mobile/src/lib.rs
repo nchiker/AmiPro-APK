@@ -7,9 +7,11 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use amipro_document::{Alignment, CharacterFormat, Document, NATIVE_MAGIC, StyleId, StyleOrigin};
+use amipro_document::{Alignment, CharacterFormat, Document, LineSpacing, NATIVE_MAGIC, StyleId, StyleOrigin};
 use amipro_editing::{CharacterAttribute, Command, Cursor, Editor, TextPosition};
 use amipro_formats::{ImportError, SamOptions, import_sam, protect, sam_document, sam_losses};
+
+mod extras;
 
 uniffi::setup_scaffolding!();
 
@@ -81,6 +83,13 @@ pub struct Paragraph {
     pub underline: bool,
     pub align: Align,
     pub spans: Vec<Span>,
+    /// Indents in twips (1/1440 inch), the paragraph's own over its style's.
+    pub indent_left: i32,
+    /// Added to `indent_left` on the first line (negative hangs).
+    pub indent_first: i32,
+    pub indent_right: i32,
+    /// Line height as a multiple of single spacing (1.0, 1.5, 2.0, or what a custom height comes to).
+    pub line_spacing_factor: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -556,7 +565,20 @@ fn byte_of(text: &str, unit: u32) -> Option<usize> {
 }
 
 fn view(document: &Document, index: usize) -> Option<Paragraph> {
-    let source = document.main_flow().paragraph(index)?;
+    view_in(document, document.main_flow(), index)
+}
+
+fn align_of(alignment: Alignment) -> Align {
+    match alignment {
+        Alignment::Left => Align::Left,
+        Alignment::Right => Align::Right,
+        Alignment::Centre => Align::Centre,
+        Alignment::Justify => Align::Justify,
+    }
+}
+
+fn view_in(document: &Document, flow: &amipro_document::Flow, index: usize) -> Option<Paragraph> {
+    let source = flow.paragraph(index)?;
     let style = document.styles().get(&source.style);
     let attributes = style.map(|style| style.attributes);
     let spans = source
@@ -565,6 +587,10 @@ fn view(document: &Document, index: usize) -> Option<Paragraph> {
         .filter(|run| run.format != CharacterFormat::PLAIN)
         .map(|run| span(&source.text, run.start, run.end, &run.format))
         .collect();
+    // The paragraph's own alignment, indents and spacing over its style's.
+    let alignment = source.format.alignment.or(style.map(|style| style.alignment)).unwrap_or_default();
+    let indents = source.format.indents.or(style.map(|style| style.indents)).unwrap_or_default();
+    let line = source.format.line_spacing.or(style.map(|style| style.spacing.line));
     Some(Paragraph {
         text: source.text.clone(),
         style_name: style.map(|style| style.name.clone()).unwrap_or_default(),
@@ -573,13 +599,20 @@ fn view(document: &Document, index: usize) -> Option<Paragraph> {
         bold: style.is_some_and(|style| style.bold),
         italic: style.is_some_and(|style| style.italic),
         underline: attributes.is_some_and(|attributes| attributes.underline),
-        align: match style.map(|style| style.alignment).unwrap_or_default() {
-            Alignment::Left => Align::Left,
-            Alignment::Right => Align::Right,
-            Alignment::Centre => Align::Centre,
-            Alignment::Justify => Align::Justify,
-        },
+        align: align_of(alignment),
         spans,
+        indent_left: indents.all,
+        indent_first: indents.first,
+        indent_right: indents.right,
+        line_spacing_factor: match line {
+            None | Some(LineSpacing::Single) => 1.0,
+            Some(LineSpacing::OneAndAHalf(_)) => 1.5,
+            Some(LineSpacing::Double(_)) => 2.0,
+            Some(LineSpacing::Custom(height)) => {
+                let size = style.map_or(12.0, |style| style.font_size_points).max(1.0);
+                (height as f32 / 20.0 / (size * 1.2)).clamp(0.5, 6.0)
+            }
+        },
     })
 }
 
@@ -602,6 +635,7 @@ fn span(text: &str, start: usize, end: usize, format: &CharacterFormat) -> Span 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extras::LineSpacingChoice;
 
     const SAMPLE: &[u8] = include_bytes!("../tests/fixtures/synthetic-pages-and-frames.sam");
 
@@ -932,5 +966,138 @@ mod tests {
         ));
         let doc = open_document(locked, "p".into(), Some("secret".into())).unwrap();
         assert!(protect::is_protected(&doc.save_sam(1_800_000_000).unwrap()));
+    }
+
+    // ---- extras: cross-paragraph edits, layout, find, objects, page setup ----
+
+    fn texts(doc: &AmiDoc) -> Vec<String> {
+        doc.paragraphs().into_iter().map(|p| p.text).collect()
+    }
+
+    fn lines(doc: &AmiDoc, text: &str) {
+        doc.replace_text(0, 0, 0, text.into()).unwrap();
+    }
+
+    #[test]
+    fn a_range_across_paragraphs_is_replaced_copied_and_formatted() {
+        let doc = new_document(1_800_000_000);
+        lines(&doc, "alpha\nbravo\ncharlie");
+        assert_eq!(doc.text_in_range(0, 2, 2, 3).unwrap(), "pha\nbravo\ncha");
+        assert_eq!(doc.text_in_range(2, 3, 0, 2).unwrap(), "pha\nbravo\ncha", "either order");
+        // Bold across all three paragraphs, then read back by the bar's rule.
+        doc.set_attribute_between(0, 2, 2, 3, Attr::Bold, true).unwrap();
+        assert!(doc.format_state_between(0, 2, 2, 3).unwrap().bold);
+        assert!(!doc.format_state_between(0, 0, 2, 3).unwrap().bold, "not bold everywhere");
+        let again = reopened(&doc);
+        assert!(again.format_state_between(0, 2, 2, 3).unwrap().bold);
+        // Delete across paragraphs joins them; typing over a cross-paragraph selection replaces it.
+        doc.replace_range(0, 2, 2, 3, "XY".into()).unwrap();
+        assert_eq!(texts(&doc), ["alXYrlie"]);
+        assert!(doc.undo().unwrap());
+        assert_eq!(texts(&doc), ["alpha", "bravo", "charlie"]);
+        // A newline in the replacement splits.
+        doc.replace_range(0, 5, 1, 0, "\n".into()).unwrap();
+        assert_eq!(texts(&doc), ["alpha", "bravo", "charlie"]);
+        doc.replace_range(0, 5, 1, 5, "!\nzed".into()).unwrap();
+        assert_eq!(texts(&doc), ["alpha!", "zed", "charlie"]);
+    }
+
+    #[test]
+    fn a_range_holding_an_object_is_refused() {
+        let doc = open_sample();
+        let i = plain_index(&doc);
+        let units = doc.paragraph(i).unwrap().text.encode_utf16().count() as u32;
+        assert!(matches!(doc.replace_range(0, 0, i, units, String::new()), Err(AmiError::ProtectedObject)));
+        assert!(!doc.is_edited());
+    }
+
+    #[test]
+    fn alignment_indents_and_line_spacing_are_shown_and_survive_save() {
+        let doc = new_document(1_800_000_000);
+        lines(&doc, "one\ntwo\nthree");
+        doc.set_alignment(0, 1, Align::Centre).unwrap();
+        eprintln!("after alignment: {:?}", doc.sam_losses(1_800_000_000).unwrap());
+        doc.set_indents(1, 2, Some(720), Some(360), Some(240)).unwrap();
+        eprintln!("after indents: {:?}", doc.sam_losses(1_800_000_000).unwrap());
+        doc.set_line_spacing(2, 2, LineSpacingChoice::Double).unwrap();
+        eprintln!("after spacing: {:?}", doc.sam_losses(1_800_000_000).unwrap());
+        let check = |d: &AmiDoc| {
+            let p = d.paragraphs();
+            assert_eq!(p[0].align, Align::Centre);
+            assert_eq!(p[1].align, Align::Centre);
+            assert_eq!(p[2].align, Align::Left);
+            assert_eq!((p[0].indent_left, p[0].indent_first), (0, 0));
+            assert_eq!((p[1].indent_left, p[1].indent_first, p[1].indent_right), (720, 360, 240));
+            assert_eq!(p[2].line_spacing_factor, 2.0);
+            assert_eq!(p[0].line_spacing_factor, 1.0);
+        };
+        check(&doc);
+        eprintln!("losses: {:?}", doc.sam_losses(1_800_000_000).unwrap());
+        assert!(doc.sam_losses(1_800_000_000).unwrap().is_empty());
+        check(&reopened(&doc));
+        doc.set_line_spacing(2, 2, LineSpacingChoice::Single).unwrap();
+        assert_eq!(doc.paragraph(2).unwrap().line_spacing_factor, 1.0);
+    }
+
+    #[test]
+    fn face_and_colour_over_a_range_survive_save() {
+        let doc = new_document(1_800_000_000);
+        lines(&doc, "one\ntwo");
+        doc.set_font_between(0, 1, 1, 2, Some("Courier New".into()), None, Some(0x336699)).unwrap();
+        let check = |d: &AmiDoc| {
+            for (i, range) in [(0usize, 1u32..3), (1, 0..2)] {
+                let p = d.paragraph(i as u32).unwrap();
+                let s = p.spans.iter().find(|s| s.start <= range.start && s.end >= range.end).expect("a span");
+                assert_eq!(s.family.as_deref(), Some("Courier New"));
+                assert_eq!(s.colour, Some(0x336699));
+            }
+        };
+        check(&doc);
+        check(&reopened(&doc));
+        assert!(doc.fonts().iter().any(|f| f == "Courier New"));
+    }
+
+    #[test]
+    fn find_and_replace_all() {
+        let doc = new_document(1_800_000_000);
+        lines(&doc, "The cat and THE dog\nthe end, other");
+        let hits = doc.find("the".into(), false, false);
+        assert_eq!(hits.len(), 4, "The, THE, the, and the 'the' inside 'other': {hits:?}");
+        assert_eq!(doc.find("the".into(), true, false).len(), 2);
+        assert_eq!(doc.find("the".into(), false, true).len(), 3, "whole words only");
+        assert_eq!(doc.find("é😀".into(), false, false).len(), 0);
+        assert_eq!(doc.replace_all("the".into(), "a".into(), false, true).unwrap(), 3);
+        assert_eq!(texts(&doc), ["a cat and a dog", "a end, other"]);
+        assert!(doc.undo().unwrap(), "one undo step for the whole replace");
+        assert_eq!(texts(&doc), ["The cat and THE dog", "the end, other"]);
+    }
+
+    #[test]
+    fn objects_are_listed_and_previewed_and_can_be_deleted() {
+        let doc = open_sample();
+        let objects = doc.objects();
+        let count: usize = doc.paragraphs().iter().map(|p| p.text.matches(OBJECT_CHAR).count()).sum();
+        assert_eq!(objects.len(), count);
+        assert!(!objects.is_empty());
+        eprintln!("objects: {objects:?}");
+        let first = &objects[0];
+        let before = doc.paragraph(first.paragraph).unwrap().text;
+        doc.delete_object(first.paragraph, first.offset).unwrap();
+        eprintln!("after delete: {:?} -> {:?}", before, doc.paragraph(first.paragraph).map(|p| p.text));
+        assert!(doc.paragraph(first.paragraph).map_or(true, |p| p.text.matches(OBJECT_CHAR).count() < before.matches(OBJECT_CHAR).count()));
+        assert_eq!(doc.objects().len(), count - 1);
+        assert!(doc.undo().unwrap());
+        assert_eq!(doc.objects().len(), count);
+        assert!(doc.delete_object(0, 0).is_err() || doc.paragraph(0).unwrap().text.starts_with(OBJECT_CHAR));
+    }
+
+    #[test]
+    fn page_setup_gives_paper_and_margins() {
+        let setup = new_document(1_800_000_000).page_setup();
+        assert_eq!((setup.width_twips, setup.height_twips), (12_240, 15_840));
+        assert_eq!((setup.margin_left, setup.margin_top), (1_440, 1_440));
+        let sample = open_sample().page_setup();
+        assert!(sample.width_twips > 0 && sample.margin_left >= 0);
+        eprintln!("sample setup: header {} footer {}", sample.header.len(), sample.footer.len());
     }
 }

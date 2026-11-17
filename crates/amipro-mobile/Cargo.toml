@@ -16,6 +16,8 @@ path = "src/bin/uniffi-bindgen.rs"
 amipro-document = { path = "../../external/AmiPro-Linux/crates/document" }
 amipro-formats = { path = "../../external/AmiPro-Linux/crates/ami-formats" }
 amipro-editing = { path = "../../external/AmiPro-Linux/crates/editing" }
+amipro-pictures = { path = "../../external/AmiPro-Linux/crates/pictures" }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff"] }
 uniffi = { version = "0.29.4", features = ["cli"] }
 thiserror = "2"
 
