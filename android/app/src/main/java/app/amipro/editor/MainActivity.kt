@@ -79,6 +79,12 @@ private val DarkScheme = darkColorScheme(
 class MainActivity : ComponentActivity() {
     private val vm: EditorViewModel get() = (application as AmiProApp).editor
 
+    override fun onStart() {
+        super.onStart()
+        // Slice 4: if a file shared with Stack was deleted, tell Stack (only when the system says it does not exist).
+        Thread { try { StackSync(applicationContext).sweep() } catch (e: Exception) { } }.start()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // A rotation or process restore re-delivers the original intent: only act on a fresh launch.

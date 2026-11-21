@@ -12,7 +12,7 @@ import android.os.Bundle
 import java.security.MessageDigest
 
 /**
- * What Stack calls to open a linked file here. Only `open` exists in this version. Stack's own signing certificate is
+ * What Stack calls here: `open` (open a linked file), `stat` (is it there, and what hash) and `refresh` (publish it again, headless). Stack's own signing certificate is
  * the only caller answered (exactly one signer, uid mapped to a single package); anything else gets a refusal.
  */
 class StackLinkProvider : ContentProvider() {
@@ -23,6 +23,8 @@ class StackLinkProvider : ContentProvider() {
         if (!callerAllowed()) throw SecurityException("Not allowed")
         return when (method) {
             "open" -> open(arg.orEmpty(), extras?.getString("mode"))
+            "stat" -> StackSync(context).stat(arg.orEmpty())
+            "refresh" -> StackSync(context).refresh(arg.orEmpty())
             else -> Bundle().apply { putString("error", "unknown_method") }
         }
     }

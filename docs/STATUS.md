@@ -128,3 +128,10 @@ Contract draft: `~/Projects/Stack/docs/STACK_LINK_CONTRACT.md` (read it first). 
 6. **Manifest and release.** New provider and a package query for Stack; a decision for the owner on each permission;
    version bump, signed release, release notes updated.
 Order and dependencies are the slices table in the contract. Do none of this before the contract is agreed.
+
+## Stack link slice 4, AmiPro side (code written 2026-11-21, NOT yet tested on a device, not released)
+Built to the contract Stack confirmed: provider `stat` (`exists`, `hash`, `modified`, `locators`; `exists=false` only when the
+system says the document is gone, otherwise `error=unreachable`), `refresh` (headless re-publish; `protected`, `unreachable`,
+`not_found`), and `removed` sent to Stack (`reason` "deleted") by a sweep at app start and when opening a file fails with
+file-not-found; sent once per link until the file is published again. Code: `StackSync` in `StackLink.kt`.
+Not done: reason "trashed", `moved`, `unshared`, `delete`. Waiting for Stack's slice 4 build on the test phone to check end to end.

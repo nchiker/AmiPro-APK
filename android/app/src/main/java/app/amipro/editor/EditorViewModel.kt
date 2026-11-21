@@ -97,6 +97,7 @@ class EditorViewModel(private val app: Application) {
     private var protectedFile = false
     private val linkMap = LinkMap(app)
     private val stack = StackLink(app)
+    private val stackSync = StackSync(app)
     /** Set when the open file is password-protected and Share with Stack needs the person's warning first. */
     var pendingProtectedShare by mutableStateOf(false)
     /** A document that has no file yet: Save asks where to put it. */
@@ -172,6 +173,7 @@ class EditorViewModel(private val app: Application) {
             } catch (e: Exception) {
                 message = "Could not open this file: ${e.message}"
                 // A recent file that was deleted or whose access was withdrawn would fail on every tap.
+                if (e is FileNotFoundException) withContext(Dispatchers.IO) { stackSync.sweep() }
                 if ((e is SecurityException || e is FileNotFoundException) && recents.any { it.uri == uri }) {
                     forget(uri)
                     message = "That file is no longer available, so it was removed from the recent list."
@@ -480,7 +482,7 @@ class EditorViewModel(private val app: Application) {
     /** What printing needs, read once. */
     fun printData(): PrintData? {
         val d = doc ?: return null
-        return PrintData(paragraphs.toList(), d.objects(), d.pageSetup(), { o -> d.pictureImage(o.paragraph, o.offset) }, { o -> d.tableText(o.paragraph, o.offset) }, { o -> d.frameText(o.paragraph, o.offset) })
+        return printDataOf(d, paragraphs.toList())
     }
 
     // ---- Share with Stack ----
@@ -531,21 +533,7 @@ class EditorViewModel(private val app: Application) {
 
     /** Builds the preview and the record for [bytes] (the file as it is on disk) and hands them to Stack. */
     private suspend fun send(uri: Uri, bytes: ByteArray, snap: StackSnapshot): ShareResult = withContext(Dispatchers.IO) {
-        val pdf = File.createTempFile("stack-preview", ".pdf", app.cacheDir)
-        try {
-            val preview = try {
-                DocumentPrintAdapter(app, snap.name, snap.data).writePdf(pdf)
-                pdf.takeIf { it.length() in 1..StackLink.MAX_PREVIEW_BYTES }
-            } catch (e: Exception) { android.util.Log.w("StackLink", "preview failed", e); null }
-            val linkId = linkMap.idOrNew(uri)
-            val result = stack.share(LinkDocument(
-                linkId = linkId, title = StackLink.cleanTitle(snap.name),
-                modified = StackLink.lastModified(app, uri), hash = StackLink.sha256(bytes), uri = uri,
-                text = StackLink.clipText(snap.doc.plainText()), preview = preview, protected = snap.protectedFile,
-            ))
-            if (result is ShareResult.Done) linkMap.keep(uri, linkId)
-            result
-        } finally { pdf.delete() }
+        stackSync.publish(uri, bytes, snap.name, snap.doc.plainText(), snap.data, snap.protectedFile)
     }
 
     fun undo() = history { it.undo() }

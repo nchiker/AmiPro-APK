@@ -45,6 +45,12 @@ class PrintData(
     val frameText: (ObjectInfo) -> String?,
 )
 
+/** What printing (and the Stack preview) needs from [d], whose paragraphs are [paragraphs]. */
+fun printDataOf(d: uniffi.amipro_mobile.AmiDoc, paragraphs: List<Paragraph>) = PrintData(
+    paragraphs, d.objects(), d.pageSetup(),
+    { o -> d.pictureImage(o.paragraph, o.offset) }, { o -> d.tableText(o.paragraph, o.offset) }, { o -> d.frameText(o.paragraph, o.offset) },
+)
+
 /** The paper the document asks for, as the print dialog's starting choice (the person can still change it). */
 fun printAttributesFor(setup: PageSetup): PrintAttributes {
     val wMils = setup.widthTwips * 1000 / 1440
