@@ -514,6 +514,32 @@ impl AmiDoc {
         decode_picture(&bytes, screen.as_deref())
     }
 
+    /// Plain text for search: each main-text paragraph, then (after the paragraph that holds it) the text of
+    /// every table cell and text frame. Pictures, drawings, charts and equations hold no text here.
+    pub fn plain_text(&self) -> String {
+        let mut out = String::new();
+        let objects = self.objects();
+        for (index, p) in self.paragraphs().iter().enumerate() {
+            let text = p.text.replace(OBJECT_CHAR, "").replace('\u{2028}', "\n");
+            if !text.trim().is_empty() {
+                out.push_str(&text);
+                out.push('\n');
+            }
+            for o in objects.iter().filter(|o| o.paragraph as usize == index) {
+                let extra = match o.kind {
+                    ObjectKind::Table => self.table_text(o.paragraph, o.offset).map(|t| t.cells.join("\n")),
+                    ObjectKind::TextFrame => self.frame_text(o.paragraph, o.offset),
+                    _ => None,
+                };
+                if let Some(extra) = extra.filter(|e| !e.trim().is_empty()) {
+                    out.push_str(&extra);
+                    out.push('\n');
+                }
+            }
+        }
+        out
+    }
+
     /// The text of a table at an object.
     pub fn table_text(&self, paragraph: u32, offset: u32) -> Option<TableView> {
         let state = self.lock();

@@ -93,6 +93,12 @@ class EditorViewModel(private val app: Application) {
     var canWriteBack by mutableStateOf(true)
         private set
     private var keepsOriginal = true
+    /** True when the open file needed a password: it is never shared with Stack without an explicit yes. */
+    private var protectedFile = false
+    private val linkMap = LinkMap(app)
+    private val stack = StackLink(app)
+    /** Set when the open file is password-protected and Share with Stack needs the person's warning first. */
+    var pendingProtectedShare by mutableStateOf(false)
     /** A document that has no file yet: Save asks where to put it. */
     var isNew by mutableStateOf(false)
         private set
@@ -143,6 +149,7 @@ class EditorViewModel(private val app: Application) {
                 doc?.close()
                 doc = opened
                 source = uri
+                protectedFile = password != null
                 name = displayName
                 canWriteBack = canWrite(uri)
                 remember(uri, displayName, canWriteBack)
@@ -196,6 +203,7 @@ class EditorViewModel(private val app: Application) {
         val d = newDocument(System.currentTimeMillis() / 1000)
         doc = d
         source = null
+        protectedFile = false
         name = "Untitled.sam"
         isNew = true
         canWriteBack = false
@@ -475,6 +483,58 @@ class EditorViewModel(private val app: Application) {
         return PrintData(paragraphs.toList(), d.objects(), d.pageSetup(), { o -> d.pictureImage(o.paragraph, o.offset) }, { o -> d.tableText(o.paragraph, o.offset) }, { o -> d.frameText(o.paragraph, o.offset) })
     }
 
+    // ---- Share with Stack ----
+    /** More menu: puts this document (text and a preview) in Stack, where it can be searched and opened again. */
+    fun shareWithStack(confirmedProtected: Boolean = false) {
+        pendingProtectedShare = false
+        val uri = source
+        if (doc == null || uri == null) { message = "Save the document to a file first, then share it with Stack."; return }
+        if (edited) { message = "Save your changes first, so Stack gets what is in the file."; return }
+        if (!stack.installed()) { message = "Stack is not installed on this phone. Install Stack to share documents with it."; return }
+        if (protectedFile && !confirmedProtected) { pendingProtectedShare = true; return }
+        viewModelScope.launch {
+            busy = true
+            val result = try {
+                val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot read this file") }
+                send(uri, bytes)
+            } catch (e: Exception) { ShareResult.Failed("Could not share: ${e.message}") }
+            busy = false
+            message = when (result) {
+                is ShareResult.Done -> if (result.created) "Shared with Stack" else if (result.changed) "Stack updated" else "Stack already has this version"
+                is ShareResult.Failed -> result.reason
+            }
+        }
+    }
+
+    /** After a save: tells Stack about the new version, but only for a file already shared. Quiet unless it fails. */
+    private fun publishIfShared(uri: Uri, bytes: ByteArray) {
+        if (linkMap.existingId(uri) == null || !stack.installed()) return
+        viewModelScope.launch {
+            val result = try { send(uri, bytes) } catch (e: Exception) { ShareResult.Failed("${e.message}") }
+            if (result is ShareResult.Failed) message = "Saved, but Stack was not updated: ${result.reason}"
+        }
+    }
+
+    /** Builds the preview and the record for [bytes] (the file as it is on disk) and hands them to Stack. */
+    private suspend fun send(uri: Uri, bytes: ByteArray): ShareResult {
+        val d = doc ?: return ShareResult.Failed("No document is open.")
+        val data = printData() ?: return ShareResult.Failed("No document is open.")
+        return withContext(Dispatchers.IO) {
+            val pdf = File(app.cacheDir, "stack-preview.pdf")
+            try {
+                val preview = try {
+                    DocumentPrintAdapter(app, name, data).writePdf(pdf)
+                    pdf.takeIf { it.length() in 1..StackLink.MAX_PREVIEW_BYTES }
+                } catch (e: Exception) { android.util.Log.w("StackLink", "preview failed", e); null }
+                stack.share(LinkDocument(
+                    linkId = linkMap.idFor(uri), title = StackLink.cleanTitle(name),
+                    modified = StackLink.lastModified(app, uri), hash = StackLink.sha256(bytes), uri = uri,
+                    text = StackLink.clipText(d.plainText()), preview = preview, protected = protectedFile,
+                ))
+            } finally { pdf.delete() }
+        }
+    }
+
     fun undo() = history { it.undo() }
     fun redo() = history { it.redo() }
     private fun history(step: (AmiDoc) -> Boolean) {
@@ -523,6 +583,7 @@ class EditorViewModel(private val app: Application) {
                 }
                 edited = false
                 message = "Saved"
+                publishIfShared(uri, bytes)
             } catch (e: Exception) {
                 message = "Could not save: ${(e as? AmiException.Failed)?.detail ?: e.message}. Your edits are still open; try Save a copy."
             } finally {

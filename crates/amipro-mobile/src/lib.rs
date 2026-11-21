@@ -916,6 +916,81 @@ mod tests {
         assert_eq!(mismatched, 0);
     }
 
+    /// Opt-in audit for the Stack link preview: how many real SAMs hold tables, text frames, pictures or
+    /// drawings, and how much of their text lives inside them (read only; counts only, never names or text):
+    /// `AMIPRO_REF_DIR=... cargo test --release -p amipro-mobile reference_object_audit -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "reads the owner's reference samples; set AMIPRO_REF_DIR"]
+    fn reference_object_audit() {
+        let Some(dir) = std::env::var_os("AMIPRO_REF_DIR") else { return };
+        let mut files = Vec::new();
+        let mut stack = vec![std::path::PathBuf::from(dir)];
+        while let Some(path) = stack.pop() {
+            for entry in std::fs::read_dir(&path).unwrap().flatten() {
+                let p = entry.path();
+                if p.is_dir() { stack.push(p) } else if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("sam")) { files.push(p) }
+            }
+        }
+        let (mut opened, mut protected, mut plain, mut tables, mut frames, mut pictures, mut other) = (0, 0, 0, 0, 0, 0, 0);
+        let (mut table_heavy, mut text_in_objects_docs, mut table_unreadable, mut empty_body) = (0, 0, 0, 0);
+        let (mut body_total, mut table_total, mut frame_total) = (0usize, 0usize, 0usize);
+        for path in &files {
+            let bytes = std::fs::read(path).unwrap();
+            let doc = match open_document(bytes, "ref".into(), None) {
+                Ok(d) => d,
+                Err(AmiError::PasswordRequired) => { protected += 1; continue }
+                Err(_) => continue,
+            };
+            opened += 1;
+            let body: usize = doc.paragraphs().iter().map(|p| p.text.chars().filter(|c| *c != OBJECT_CHAR && !c.is_whitespace()).count()).sum();
+            if body == 0 { empty_body += 1 }
+            let (mut t, mut f) = (0usize, 0usize);
+            let (mut has_table, mut has_frame, mut has_picture, mut has_other) = (false, false, false, false);
+            for o in doc.objects() {
+                match o.kind {
+                    crate::extras::ObjectKind::Table => {
+                        has_table = true;
+                        match doc.table_text(o.paragraph, o.offset) {
+                            Some(view) => t += view.cells.iter().map(|c| c.chars().filter(|c| !c.is_whitespace()).count()).sum::<usize>(),
+                            None => table_unreadable += 1,
+                        }
+                    }
+                    crate::extras::ObjectKind::TextFrame => {
+                        has_frame = true;
+                        f += doc.frame_text(o.paragraph, o.offset).map(|x| x.chars().filter(|c| !c.is_whitespace()).count()).unwrap_or(0);
+                    }
+                    crate::extras::ObjectKind::Picture => has_picture = true,
+                    crate::extras::ObjectKind::Other => has_other = true,
+                    _ => {}
+                }
+            }
+            if !(has_table || has_frame || has_picture || has_other) { plain += 1 }
+            tables += has_table as u32; frames += has_frame as u32; pictures += has_picture as u32; other += has_other as u32;
+            if t + f > 0 { text_in_objects_docs += 1 }
+            if t > body { table_heavy += 1 }
+            body_total += body; table_total += t; frame_total += f;
+        }
+        eprintln!("OBJECT_AUDIT files={} opened={opened} password_protected={protected} plain_text_only={plain} with_table={tables} with_text_frame={frames} with_picture={pictures} with_drawing_or_other={other}", files.len());
+        eprintln!("OBJECT_AUDIT docs_with_text_inside_tables_or_frames={text_in_objects_docs} docs_where_table_text_exceeds_body={table_heavy} tables_unreadable={table_unreadable} docs_with_empty_body={empty_body}");
+        eprintln!("OBJECT_AUDIT nonspace_chars body={body_total} in_tables={table_total} in_text_frames={frame_total}");
+    }
+
+    #[test]
+    fn plain_text_includes_frame_and_table_text() {
+        let doc = open_sample();
+        let text = doc.plain_text();
+        assert!(!text.contains(OBJECT_CHAR));
+        for o in doc.objects() {
+            let inner = match o.kind {
+                crate::extras::ObjectKind::TextFrame => doc.frame_text(o.paragraph, o.offset),
+                crate::extras::ObjectKind::Table => doc.table_text(o.paragraph, o.offset).map(|t| t.cells.join("\n")),
+                _ => None,
+            };
+            if let Some(inner) = inner { assert!(text.contains(inner.trim())); }
+        }
+        assert!(doc.objects().iter().any(|o| o.kind == crate::extras::ObjectKind::TextFrame), "fixture should hold a frame");
+    }
+
     #[test]
     fn the_format_bar_ignores_object_characters() {
         let doc = open_sample();

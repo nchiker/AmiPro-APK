@@ -81,8 +81,8 @@ class DocumentPrintAdapter(
     private var margins = FloatArray(4)
     private var paper = floatArrayOf(612f, 792f)
 
-    override fun onLayout(old: PrintAttributes?, new: PrintAttributes, cancel: CancellationSignal, callback: LayoutResultCallback, extras: Bundle?) {
-        if (cancel.isCanceled) { callback.onLayoutCancelled(); return }
+    /** Lays the document out for [new]'s paper. */
+    private fun layoutFor(new: PrintAttributes) {
         val media = new.mediaSize ?: PrintAttributes.MediaSize.NA_LETTER
         val landscape = !media.isPortrait
         val wPt = (if (landscape) media.heightMils else media.widthMils) * 72f / 1000f
@@ -95,6 +95,31 @@ class DocumentPrintAdapter(
         val height = (hPt - margins[1] - margins[3]).toInt().coerceAtLeast(72)
         pages = paginate(width, height)
         attributes = new
+    }
+
+    /** Writes every page as a PDF to [file] with no print dialog (the preview Stack keeps); returns the page count. */
+    fun writePdf(file: java.io.File): Int {
+        val attrs = PrintAttributes.Builder().setMediaSize(printAttributesFor(data.setup).mediaSize!!)
+            .setMinMargins(PrintAttributes.Margins.NO_MARGINS).setResolution(PrintAttributes.Resolution("pdf", "pdf", 300, 300)).build()
+        layoutFor(attrs)
+        val pdf = PrintedPdfDocument(context, attrs)
+        try {
+            val count = pages.size.coerceAtLeast(1)
+            for (n in 0 until count) {
+                val page = pdf.startPage(n)
+                drawPage(page.canvas, n, count, pages.getOrNull(n))
+                pdf.finishPage(page)
+            }
+            FileOutputStream(file).use { pdf.writeTo(it) }
+            return count
+        } finally {
+            pdf.close()
+        }
+    }
+
+    override fun onLayout(old: PrintAttributes?, new: PrintAttributes, cancel: CancellationSignal, callback: LayoutResultCallback, extras: Bundle?) {
+        if (cancel.isCanceled) { callback.onLayoutCancelled(); return }
+        layoutFor(new)
         val info = PrintDocumentInfo.Builder(jobName.ifBlank { "Document" } + ".pdf")
             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
             .setPageCount(pages.size.coerceAtLeast(1))

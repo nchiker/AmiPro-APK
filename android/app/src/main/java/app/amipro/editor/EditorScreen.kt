@@ -97,6 +97,7 @@ fun EditorScreen(
                         DropdownMenuItem(text = { Text("Find and replace...") }, onClick = { menu = false; vm.openFind() })
                         DropdownMenuItem(text = { Text("Pictures and tables...") }, onClick = { menu = false; onObjects() })
                         DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
+                        DropdownMenuItem(text = { Text("Share with Stack") }, onClick = { menu = false; vm.shareWithStack() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })

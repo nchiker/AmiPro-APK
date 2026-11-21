@@ -93,3 +93,36 @@ Steps 3 (formatting) and New document are built; left: face/colour, alignment, c
 
 ## Next (from FEASIBILITY.md)
 Steps 3 (formatting) and New document are built; left: face/colour, alignment, cross-paragraph selection, SAM -> native choice on Save a copy. Then the VM check of phone-saved files and the owner's own use.
+
+## Stack link, AmiPro side of slice 2 (built 2026-11-21, version 0.4.0)
+Built: `AmiDoc.plain_text()` (body + table cells + frame text), preview PDF via `DocumentPrintAdapter.writePdf`, More > Share with Stack
+(`StackLink.kt`, `EditorViewModel.shareWithStack`), `LinkMap` (uri to UUID, app-private), re-publish after each save of a shared file,
+provider `<applicationId>.stacklink` with `open` (`StackLinkProvider.kt`, Stack release certificate only), `<queries>` for Stack.
+Protected files ask before sharing and set `protected: true`. Stack's package is `-PstackPackage=` (default `org.stackdocs.app`); the
+checks build on the 4a is `org.stackdocs.app.checks.linkcontract` and is signed with the same release key.
+Checked on the Pixel 4a (release build, synthetic file): table/frame words found by Stack search; edit+save changed Stack's text, preview
+(valid PDF) and hash; Stack's Open in Ami Pro opened the file. NOT yet checked: the password warning on a device, Stack not installed,
+a share while the file is large. Not done: share from recent-file rows; `stat`/`refresh`/`delete` (slice 4). A shipping APK must be built
+WITHOUT `-PstackPackage` (the one on the 4a points at the checks build). Original plan below.
+
+## Planned: Stack link (agreed direction 2026-11-21)
+Stack's side of slice 2 is built and tested. **Start from `docs/STACK_LINK_HANDOFF.md`** (protocol, record format, provider, rules, checks).
+Stack becomes the one place to find every document; Ami Pro keeps the editable files and tells Stack about them.
+Contract draft: `~/Projects/Stack/docs/STACK_LINK_CONTRACT.md` (read it first). Work that lands in THIS project:
+1. **Text for search.** Facade function returning plain text of the main text plus every table cell and text frame
+   (and later headers, footers, notes). Audit (`reference_object_audit`, 424 reference files, counts only): 34% of
+   documents have a table, 14% have more text in tables than in the body, 0 tables unreadable. A body-only index
+   is not acceptable.
+2. **Preview PDF.** Reuse the print layout (`Printing.kt`) to write a PDF without the print dialog. Decided 2026-11-21:
+   drawings, charts, equations and metafiles (15% of reference files) are only labelled in the preview and not
+   searched (the owner says they hold nothing Stack needs). Columns, frames fixed on the page and footnotes wait
+   for a real document that needs them.
+3. **Share with Stack.** An action in the More menu and on the recent-files rows. Builds the record (title, mime,
+   locators, modified, revision, text, preview), mints and keeps a `link_id` map in app-private storage, sends it
+   to Stack's provider, and re-sends after every save.
+4. **Provider `<package>.stacklink`** with `stat`, `open`, `refresh`, `delete`; callers checked by package and
+   pinned certificate. Opening a file from Stack goes through the existing Open with path.
+5. **Lifecycle.** Emit `moved` and `removed` for files it changes; rescan known folders by hash when `stat` fails.
+6. **Manifest and release.** New provider and a package query for Stack; a decision for the owner on each permission;
+   version bump, signed release, release notes updated.
+Order and dependencies are the slices table in the contract. Do none of this before the contract is agreed.

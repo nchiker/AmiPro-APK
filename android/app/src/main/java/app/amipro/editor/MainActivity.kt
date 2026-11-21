@@ -167,6 +167,13 @@ private fun App(vm: EditorViewModel) {
             dismissButton = { TextButton(onClick = { vm.passwordRequest = null }) { Text("Cancel") } },
         )
     }
+    if (vm.pendingProtectedShare) AlertDialog(
+        onDismissRequest = { vm.pendingProtectedShare = false },
+        title = { Text("Share a password-protected file?") },
+        text = { Text("Stack will keep readable text and a preview of this document without the password. Share only if that is what you want.") },
+        confirmButton = { TextButton(onClick = { vm.shareWithStack(confirmedProtected = true) }) { Text("Share anyway") } },
+        dismissButton = { TextButton(onClick = { vm.pendingProtectedShare = false }) { Text("Cancel") } },
+    )
     if (vm.pendingNew) AlertDialog(
         onDismissRequest = { vm.pendingNew = false },
         title = { Text("Discard your changes?") },

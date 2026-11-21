@@ -11,9 +11,13 @@ android {
         applicationId = "app.amipro.editor"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         // Only the 64-bit phone ABI is built (build-rust.sh); add x86_64 there for an emulator.
+        // Stack's package: the real one unless a test build says otherwise (-PstackPackage=org.stackdocs.app.checks.linkcontract).
+        val stackPackage = (project.findProperty("stackPackage") as String?) ?: "org.stackdocs.app"
+        buildConfigField("String", "STACK_PACKAGE", "\"$stackPackage\"")
+        manifestPlaceholders["stackPackage"] = stackPackage
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildFeatures { compose = true; buildConfig = true }
