@@ -102,7 +102,7 @@ Protected files ask before sharing and set `protected: true`. Stack's package is
 checks build on the 4a is `org.stackdocs.app.checks.linkcontract` and is signed with the same release key.
 Checked on the Pixel 4a (release build, synthetic file): table/frame words found by Stack search; edit+save changed Stack's text, preview
 (valid PDF) and hash; Stack's Open in Ami Pro opened the file. Also checked on the 4a: the password warning (Cancel shares nothing; Share anyway sets `protected`, Stack labels it), and Stack's Open after a rename (MediaStore rename keeps the saf uri). Fixture `tests/fixtures/synthetic-protected.sam` (password `test`). NOT device-checked: Stack not installed (one early `installed()` check), a large file.
-Shipping blocked on Stack: the real Stack on the 4a (0.16.0) has no link provider; a Stack release with slice 2 is the owner's decision. Not done: share from recent-file rows; `stat`/`refresh`/`delete` (slice 4). A shipping APK must be built
+Real-package check DONE (2026-11-21): default-package AmiPro 0.4.0 (release cert 9a387c70...868a) on the 4a against real Stack 0.17.0: share accepted, listed as "Linked · Ami Pro · protected", Open in Ami Pro launched AmiPro. The 4a now has the default build installed. Remaining before publishing: the owner's go-ahead. Not done: share from recent-file rows; `stat`/`refresh`/`delete` (slice 4). A shipping APK must be built
 WITHOUT `-PstackPackage` (the one on the 4a points at the checks build). Original plan below.
 
 ## Planned: Stack link (agreed direction 2026-11-21)
