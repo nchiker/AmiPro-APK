@@ -15,15 +15,11 @@ class LinkMap(context: Context) {
 
     private fun read(): JSONObject = try { JSONObject(prefs.getString("map", null) ?: "{}") } catch (e: Exception) { JSONObject() }
 
-    /** The id for this file (its uri), minted on first use. */
-    @Synchronized fun idFor(uri: Uri): String {
-        val map = read()
-        val key = uri.toString()
-        val existing = map.optString(key)
-        if (existing.isNotEmpty()) return existing
-        val id = UUID.randomUUID().toString()
-        prefs.edit().putString("map", map.put(key, id).toString()).apply()
-        return id
+    /** The id this file has, or a fresh one that is NOT kept until [keep] is called (after Stack accepted it). */
+    @Synchronized fun idOrNew(uri: Uri): String = existingId(uri) ?: UUID.randomUUID().toString()
+
+    @Synchronized fun keep(uri: Uri, id: String) {
+        prefs.edit().putString("map", read().put(uri.toString(), id).toString()).apply()
     }
 
     @Synchronized fun existingId(uri: Uri): String? = read().optString(uri.toString()).takeIf { it.isNotEmpty() }

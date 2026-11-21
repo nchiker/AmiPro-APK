@@ -103,7 +103,8 @@ checks build on the 4a is `org.stackdocs.app.checks.linkcontract` and is signed 
 Checked on the Pixel 4a (release build, synthetic file): table/frame words found by Stack search; edit+save changed Stack's text, preview
 (valid PDF) and hash; Stack's Open in Ami Pro opened the file. Also checked on the 4a: the password warning (Cancel shares nothing; Share anyway sets `protected`, Stack labels it), and Stack's Open after a rename (MediaStore rename keeps the saf uri). Fixture `tests/fixtures/synthetic-protected.sam` (password `test`). NOT device-checked: Stack not installed (one early `installed()` check), a large file.
 Real-package check DONE (2026-11-21): default-package AmiPro 0.4.0 (release cert 9a387c70...868a) on the 4a against real Stack 0.17.0: share accepted, listed as "Linked · Ami Pro · protected", Open in Ami Pro launched AmiPro. The 4a now has the default build installed. Remaining before publishing: the owner's go-ahead. Not done: share from recent-file rows; `stat`/`refresh`/`delete` (slice 4). A shipping APK must be built
-WITHOUT `-PstackPackage` (the one on the 4a points at the checks build). Original plan below.
+WITHOUT `-PstackPackage` (the one on the 4a points at the checks build). Code review (2026-11-21) fixed: auto-publish now snapshots the saved document; a failed first share no longer marks the file shared; unique preview temp file; cancellation and busy handling. Left as known nits: hash/text can differ if the file changes outside the app while open; `open` trusts the uri (a file re-created at the same uri opens as the old link); title/text limits count UTF-16 units (Stack may count code points). 0.4.0 published as v0.4.0.
+Original plan below.
 
 ## Planned: Stack link (agreed direction 2026-11-21)
 Stack's side of slice 2 is built and tested. **Start from `docs/STACK_LINK_HANDOFF.md`** (protocol, record format, provider, rules, checks).
