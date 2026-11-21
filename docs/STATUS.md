@@ -134,4 +134,7 @@ Built to the contract Stack confirmed: provider `stat` (`exists`, `hash`, `modif
 system says the document is gone, otherwise `error=unreachable`), `refresh` (headless re-publish; `protected`, `unreachable`,
 `not_found`), and `removed` sent to Stack (`reason` "deleted") by a sweep at app start and when opening a file fails with
 file-not-found; sent once per link until the file is published again. Code: `StackSync` in `StackLink.kt`.
-Not done: reason "trashed", `moved`, `unshared`, `delete`. Waiting for Stack's slice 4 build on the test phone to check end to end.
+Device check (2026-11-21, against Stack's TEST build): stat, refresh and the protected refusal passed. Deleting a Downloads file
+revokes AmiPro's access (SecurityException, and the persisted grant is gone too), so a deletion is not detectable there: the record
+stays "unreachable" and the user removes it by hand in Stack. The owner chose to stay cautious (no guessing from lost access).
+`removed` fires only when the provider says file-not-found with no row left. Not done: reason "trashed", `moved`, `unshared`, `delete`. Waiting for Stack's slice 4 build on the test phone to check end to end.
