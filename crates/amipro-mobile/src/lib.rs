@@ -992,6 +992,14 @@ mod tests {
     }
 
     #[test]
+    fn medicine_list_words_inside_the_table_are_searchable() {
+        let doc = open_document(include_bytes!("../tests/fixtures/synthetic-medicine-list.sam").to_vec(), "meds".into(), None).expect("opens");
+        let text = doc.plain_text();
+        assert!(text.contains("Zorbaprilol 10 mg morning") && text.contains("Quenfamet") && text.contains("Dr Example Clinic"));
+        assert!(!doc.paragraphs().iter().any(|p| p.text.contains("Quenfamet")), "the word lives only in the table");
+    }
+
+    #[test]
     fn the_format_bar_ignores_object_characters() {
         let doc = open_sample();
         let i = plain_index(&doc);
