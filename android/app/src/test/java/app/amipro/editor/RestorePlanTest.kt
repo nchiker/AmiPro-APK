@@ -27,4 +27,16 @@ class RestorePlanTest {
         val plan = StackSync.planRestore(listOf(rec("L1", "u1"))) { FilenLookup(true, "") }
         assertEquals("/old/L1", plan.entries[0].path)
     }
+
+    @Test fun aTrashedFileIsNotThereEvenIfFilenSaysItExists() {
+        assertFalse(FilenLookup.of(exists = true, trashed = true, path = "/p").exists)
+        assertTrue(FilenLookup.of(exists = true, trashed = false, path = "/p").exists)
+        assertFalse(FilenLookup.of(exists = false, trashed = false, path = "").exists)
+    }
+
+    @Test fun aTrashedFileIsNotRestoredAsLive() {
+        val plan = StackSync.planRestore(listOf(rec("L1", "u1"))) { FilenLookup.of(true, true, "/p") }
+        assertTrue(plan.entries.isEmpty())
+        assertTrue(plan.done)
+    }
 }

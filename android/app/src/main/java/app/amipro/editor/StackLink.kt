@@ -86,7 +86,7 @@ class FilenLocator(private val context: Context) {
     fun lookup(uuid: String): FilenLookup? = try {
         val a = context.contentResolver.call(authority, "lookup", uuid, null)
         if (a == null || a.getString("error") != null) null
-        else FilenLookup(a.getBoolean("exists") && !a.getBoolean("trashed"), a.getString("path").orEmpty())
+        else FilenLookup.of(a.getBoolean("exists"), a.getBoolean("trashed"), a.getString("path").orEmpty())
     } catch (e: Exception) { null }
 
     companion object {
@@ -95,7 +95,12 @@ class FilenLocator(private val context: Context) {
     }
 }
 
-class FilenLookup(val exists: Boolean, val path: String)
+class FilenLookup(val exists: Boolean, val path: String) {
+    companion object {
+        /** Filen reports `exists` and `trashed` separately; a file in the trash is not there for us. */
+        fun of(exists: Boolean, trashed: Boolean, path: String) = FilenLookup(exists && !trashed, path)
+    }
+}
 
 class LinkDocument(
     val linkId: String, val title: String, val modified: Long, val hash: String,
