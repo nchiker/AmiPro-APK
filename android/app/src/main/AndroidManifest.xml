@@ -8,6 +8,7 @@
     <!-- Share with Stack: Android hides other apps unless they are named here. -->
     <queries>
         <package android:name="${stackPackage}" />
+        <package android:name="app.filenfiles" />
     </queries>
     <application
         android:name=".AmiProApp"

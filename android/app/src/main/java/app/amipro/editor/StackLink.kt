@@ -36,6 +36,10 @@ class LinkMap(context: Context) {
         prefs.edit().putStringSet("gone", (prefs.getStringSet("gone", emptySet()) ?: emptySet()) + id).apply()
     }
 
+    /** The Filen path Stack was last told for this link (to notice a move), or null. */
+    @Synchronized fun filenPath(id: String): String? = prefs.getString("filen_$id", null)
+    @Synchronized fun setFilenPath(id: String, path: String?) { prefs.edit().apply { if (path == null) remove("filen_$id") else putString("filen_$id", path) }.apply() }
+
     @Synchronized fun existingId(uri: Uri): String? = read().optString(uri.toString()).takeIf { it.isNotEmpty() }
 
     @Synchronized fun uriFor(linkId: String): Uri? {
@@ -52,9 +56,33 @@ sealed class ShareResult {
 }
 
 /** One document as Stack wants it (docs/STACK_LINK_CONTRACT.md, contract 1). */
+/**
+ * Slice 5: asks Filen Files (provider `app.filenfiles.stacklink`) which Filen file a document URI is.
+ * `locate(uri)` answers {uuid, path} or {error}.
+ * Any error, or no Filen Files, means "no filen locator": the share still works with the saf locator.
+ */
+class FilenLocator(private val context: Context) {
+    class Where(val uuid: String, val path: String) {
+        fun json(): JSONObject = JSONObject().put("type", "filen").put("uuid", uuid).put("path", path)
+    }
+
+    private val authority = "app.filenfiles.stacklink"
+
+    fun locate(uri: Uri): Where? {
+        if (uri.authority != "app.filenfiles.documents") return null
+        return try {
+            val a = context.contentResolver.call(authority, "locate", uri.toString(), null) ?: return null
+            if (a.getString("error") != null) return null
+            val uuid = a.getString("uuid")?.takeIf { it.isNotEmpty() } ?: return null
+            Where(uuid, a.getString("path").orEmpty())
+        } catch (e: Exception) { null }
+    }
+}
+
 class LinkDocument(
     val linkId: String, val title: String, val modified: Long, val hash: String,
     val uri: Uri, val text: String, val preview: File?, val protected: Boolean,
+    val filen: FilenLocator.Where? = null,
 )
 
 /** The sending side of the Stack link: the four provider calls, in order, with nothing kept on failure. */
@@ -99,6 +127,16 @@ class StackLink(private val context: Context, private val stackPackage: String =
         } catch (e: SecurityException) { "untrusted" } catch (e: Exception) { "unreachable" }
     }
 
+    /** Tells Stack the file moved (Filen path changed). Null when taken; otherwise a short reason. */
+    fun moved(linkId: String, locators: JSONArray): String? {
+        if (!installed()) return "not_installed"
+        return try {
+            val body = JSONObject().put("contract", 1).put("owner", context.packageName).put("link_id", linkId).put("locators", locators)
+            val answer = resolver.call(authority, "moved", body.toString(), null) ?: return "no_answer"
+            answer.getString("error")?.takeIf { it != "unknown_link" }
+        } catch (e: SecurityException) { "untrusted" } catch (e: Exception) { "unreachable" }
+    }
+
     private fun stage(token: String, part: String, input: java.io.InputStream) {
         val out = resolver.openOutputStream(Uri.parse("content://$authority/stage/$token/$part"), "w") ?: error("Stack would not take the $part")
         out.use { input.copyTo(it) }
@@ -113,11 +151,17 @@ class StackLink(private val context: Context, private val stackPackage: String =
         .put("mime", "application/x-amipro-document")
         .put("modified", doc.modified)
         .put("hash", doc.hash)
-        .put("locators", JSONArray().put(JSONObject().put("type", "saf").put("uri", doc.uri.toString())))
+        .put("locators", locators(doc.filen, doc.uri))
         .put("shared", false)
         .put("protected", doc.protected)
 
     companion object {
+        /** Best first: the filen locator when the file lives in Filen, then the storage URI. */
+        fun locators(filen: FilenLocator.Where?, uri: Uri): JSONArray = JSONArray().apply {
+            filen?.let { put(it.json()) }
+            put(JSONObject().put("type", "saf").put("uri", uri.toString()))
+        }
+
         const val MAX_TEXT_CHARS = 1_000_000
         const val MAX_PREVIEW_BYTES = 32L * 1024 * 1024
 
@@ -163,6 +207,7 @@ sealed class FileRead {
 class StackSync(private val context: Context) {
     private val links = LinkMap(context)
     private val stack = StackLink(context)
+    private val filen = FilenLocator(context)
 
     fun read(uri: Uri): FileRead = try {
         context.contentResolver.openInputStream(uri)?.use { FileRead.Bytes(it.readBytes()) } ?: FileRead.Unreachable
@@ -183,7 +228,7 @@ class StackSync(private val context: Context) {
                 putBoolean("exists", true)
                 putString("hash", StackLink.sha256(file.bytes))
                 putLong("modified", StackLink.lastModified(context, uri))
-                putString("locators", JSONArray().put(JSONObject().put("type", "saf").put("uri", uri.toString())).toString())
+                putString("locators", StackLink.locators(filen.locate(uri), uri).toString())
             }
             FileRead.Gone -> out.apply { putBoolean("exists", false) }
             FileRead.Unreachable -> out.apply { putString("error", "unreachable") }
@@ -221,12 +266,13 @@ class StackSync(private val context: Context) {
                 pdf.takeIf { it.length() in 1..StackLink.MAX_PREVIEW_BYTES }
             } catch (e: Exception) { android.util.Log.w("StackLink", "preview failed", e); null }
             val linkId = links.idOrNew(uri)
+            val where = filen.locate(uri)
             val result = stack.share(LinkDocument(
                 linkId = linkId, title = StackLink.cleanTitle(name),
                 modified = StackLink.lastModified(context, uri), hash = StackLink.sha256(bytes), uri = uri,
-                text = StackLink.clipText(text), preview = preview, protected = isProtected,
+                text = StackLink.clipText(text), preview = preview, protected = isProtected, filen = where,
             ))
-            if (result is ShareResult.Done) links.keep(uri, linkId)
+            if (result is ShareResult.Done) { links.keep(uri, linkId); links.setFilenPath(linkId, where?.path) }
             return result
         } finally { pdf.delete() }
     }
@@ -236,8 +282,17 @@ class StackSync(private val context: Context) {
         if (!stack.installed()) return
         for ((uri, id) in links.entries()) {
             if (links.goneReported(id)) continue
-            if (read(uri) is FileRead.Gone && stack.removed(id, "deleted") == null) links.markGoneReported(id)
+            if (read(uri) is FileRead.Gone && stack.removed(id, "deleted") == null) { links.markGoneReported(id); continue }
+            sendMoveIfAny(uri, id)
         }
+    }
+
+    /** A file in Filen that was moved or renamed there: its uuid is the same, the path differs from what Stack has. */
+    private fun sendMoveIfAny(uri: Uri, id: String) {
+        val known = links.filenPath(id) ?: return
+        val where = filen.locate(uri) ?: return
+        if (where.path.isEmpty() || where.path == known) return
+        if (stack.moved(id, StackLink.locators(where, uri)) == null) links.setFilenPath(id, where.path)
     }
 
     private fun displayName(uri: Uri): String = try {
