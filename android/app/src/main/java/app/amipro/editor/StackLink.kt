@@ -164,7 +164,7 @@ class StackLink(private val context: Context, private val stackPackage: String =
         return try {
             val body = JSONObject().put("contract", 1).put("owner", context.packageName)
             val a = resolver.call(authority, "list_owned", body.toString(), null) ?: return null
-            if (a.getString("error") != null) return null
+            if (a.getString("error") != null) { android.util.Log.w("StackLink", "list_owned error: ${a.getString("error")}"); return null }
             val arr = JSONArray(a.getString("records") ?: return null)
             (0 until arr.length()).mapNotNull { i ->
                 val r = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -176,7 +176,7 @@ class StackLink(private val context: Context, private val stackPackage: String =
                 }
                 null
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) { android.util.Log.w("StackLink", "list_owned failed", e); null }
     }
 
     private fun stage(token: String, part: String, input: java.io.InputStream) {
@@ -328,11 +328,14 @@ class StackSync(private val context: Context) {
      */
     fun restoreLinks(): Int {
         if (!links.isEmpty() || links.restoreDone()) return 0
-        val records = stack.listOwned() ?: return 0
+        val records = stack.listOwned()
+        if (records == null) { android.util.Log.w("StackLink", "restore: Stack gave no list"); return 0 }
+        android.util.Log.i("StackLink", "restore: ${records.size} record(s) with a filen locator")
         var restored = 0
         for (r in records) {
-            val found = filen.lookup(r.filenUuid) ?: continue
-            if (!found.exists) continue
+            val found = filen.lookup(r.filenUuid)
+            android.util.Log.i("StackLink", "restore: lookup ${r.filenUuid} -> ${found?.exists}")
+            if (found == null || !found.exists) continue
             links.keep(FilenLocator.documentUri(r.filenUuid), r.linkId)
             links.setFilenPath(r.linkId, found.path.ifEmpty { r.filenPath })
             restored++
