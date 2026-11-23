@@ -208,3 +208,4 @@ Builds: Stack checks build `org.stackdocs.app.checks.linkcontract` 0.19.0 (code 
   6. Restore after `pm clear app.amipro.editor` (Ami Pro only): link map rebuilt, Stack shows the record only after the file is opened once. Also Filen not answering at first start, then answering: restore happens on the second start.
   7. Text check: shorter dialog text matches `docs/UI_TEXT_REVIEW.md`.
   8. Release step (owner): tag `v0.6.1`, APK + SHA256SUMS, notes from `dist/RELEASE_NOTES_0.6.1_DRAFT.md` renamed, push main and tag.
+- **Plan change (2026-11-23):** `list_owned` is not in released Stack 0.19.0 (unreleased). Final-build step 6 (restore after `pm clear`) is "NOT RUN" unless Stack 0.20.0 is on the phone; it is not a failure. In the real Stack use only documents created for the test, and remove only those. The upgrade-over step runs against the real Stack (`org.stackdocs.app`), so the earlier checks-package links stop working.
