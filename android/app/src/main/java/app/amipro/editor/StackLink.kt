@@ -118,18 +118,18 @@ class StackLink(private val context: Context, private val stackPackage: String =
                 ?: return ShareResult.Failed("Stack did not answer. Open Stack, then try again.")
             if (1 !in versions.getInt("min", 1)..versions.getInt("max", 0)) return ShareResult.Failed("Update Stack and Ami Pro, then try again.")
             val begun = resolver.call(authority, "begin", record(doc).toString(), null) ?: return ShareResult.Failed("Stack did not answer.")
-            begun.getString("error")?.let { android.util.Log.w("StackLink", "begin refused: $it ${begun.getString("message").orEmpty()}"); return ShareResult.Failed("Stack did not accept this document.") }
+            begun.getString("error")?.let { android.util.Log.w("StackLink", "begin refused: $it"); StackLink.testLog(begun.getString("message").orEmpty()); return ShareResult.Failed("Stack did not accept this document.") }
             token = begun.getString("token") ?: return ShareResult.Failed("Stack did not answer.")
             stage(token, "text", doc.text.toByteArray(Charsets.UTF_8).inputStream())
             doc.preview?.let { f -> f.inputStream().use { stage(token, "preview", it) } }
             val done = resolver.call(authority, "commit", token, null) ?: return ShareResult.Failed("Stack did not answer.")
-            done.getString("error")?.let { android.util.Log.w("StackLink", "commit refused: $it ${done.getString("message").orEmpty()}"); return ShareResult.Failed("Stack did not accept this document.") }
+            done.getString("error")?.let { android.util.Log.w("StackLink", "commit refused: $it"); StackLink.testLog(done.getString("message").orEmpty()); return ShareResult.Failed("Stack did not accept this document.") }
             token = null
             return ShareResult.Done(done.getBoolean("created"), done.getBoolean("content_changed"))
         } catch (e: SecurityException) {
             return ShareResult.Failed("Stack does not accept this copy of Ami Pro.")
         } catch (e: Exception) {
-            android.util.Log.w("StackLink", "share failed", e)
+            StackLink.warn("share failed", e)
             return ShareResult.Failed("Could not reach Stack.")
         } finally {
             token?.let { try { resolver.call(authority, "abort", it, null) } catch (e: Exception) { } }
@@ -176,7 +176,7 @@ class StackLink(private val context: Context, private val stackPackage: String =
                 }
                 null
             }
-        } catch (e: Exception) { android.util.Log.w("StackLink", "list_owned failed", e); null }
+        } catch (e: Exception) { StackLink.warn("list_owned failed", e); null }
     }
 
     private fun stage(token: String, part: String, input: java.io.InputStream) {
@@ -198,6 +198,11 @@ class StackLink(private val context: Context, private val stackPackage: String =
         .put("protected", doc.protected)
 
     companion object {
+        /** Names, paths and ids in the log only in a test build (a Stack package other than the real one); a release logs none. */
+        private val testBuild get() = BuildConfig.STACK_PACKAGE != "org.stackdocs.app"
+        fun testLog(msg: String) { if (testBuild) android.util.Log.i("StackLink", msg) }
+        /** Real builds log the exception's class only: its message can carry a document URI. */
+        fun warn(msg: String, e: Exception) { if (testBuild) android.util.Log.w("StackLink", msg, e) else android.util.Log.w("StackLink", "$msg: ${e.javaClass.simpleName}") }
         /** Best first: the filen locator when the file lives in Filen, then the storage URI. */
         fun locators(filen: FilenLocator.Where?, uri: Uri): JSONArray = JSONArray().apply {
             filen?.let { put(it.json()) }
@@ -308,7 +313,7 @@ class StackSync(private val context: Context) {
             val preview = try {
                 DocumentPrintAdapter(context, name, data).writePdf(pdf)
                 pdf.takeIf { it.length() in 1..StackLink.MAX_PREVIEW_BYTES }
-            } catch (e: Exception) { android.util.Log.w("StackLink", "preview failed", e); null }
+            } catch (e: Exception) { StackLink.warn("preview failed", e); null }
             val linkId = links.idOrNew(uri)
             val where = filen.locate(uri)
             val result = stack.share(LinkDocument(
@@ -316,7 +321,7 @@ class StackSync(private val context: Context) {
                 modified = StackLink.lastModified(context, uri), hash = StackLink.sha256(bytes), uri = uri,
                 text = StackLink.clipText(text), preview = preview, protected = isProtected, filen = where,
             ))
-            android.util.Log.i("StackLink", "publish: link $linkId filen ${where?.uuid} '${where?.path}' -> ${if (result is ShareResult.Done) "done" else result.toString()}")
+            StackLink.testLog("publish: link $linkId filen ${where?.uuid} '${where?.path}' -> ${if (result is ShareResult.Done) "done" else result.toString()}")
             if (result is ShareResult.Done) { links.keep(uri, linkId); links.setFilenPath(linkId, where?.path) }
             return result
         } finally { pdf.delete() }
@@ -331,21 +336,33 @@ class StackSync(private val context: Context) {
         if (!links.isEmpty() || links.restoreDone()) return 0
         val records = stack.listOwned()
         if (records == null) { android.util.Log.w("StackLink", "restore: Stack gave no list"); return 0 }
-        android.util.Log.i("StackLink", "restore: ${records.size} record(s) with a filen locator")
-        var restored = 0
-        var unanswered = false
-        for (r in records) {
-            val found = filen.lookup(r.filenUuid)
-            android.util.Log.i("StackLink", "restore: lookup ${r.filenUuid} -> ${found?.exists}")
-            if (found == null) { unanswered = true; continue }
-            if (!found.exists) continue
-            links.keep(FilenLocator.documentUri(r.filenUuid), r.linkId)
-            links.setFilenPath(r.linkId, found.path.ifEmpty { r.filenPath })
-            restored++
+        StackLink.testLog("restore: ${records.size} record(s) with a filen locator")
+        val plan = planRestore(records) { filen.lookup(it) }
+        for (e in plan.entries) {
+            links.keep(FilenLocator.documentUri(e.uuid), e.linkId)
+            links.setFilenPath(e.linkId, e.path)
         }
-        // Filen not answering (not installed, locked, error) is not "the file is gone": try again at the next start.
-        if (!unanswered) links.markRestoreDone()
-        return restored
+        StackLink.testLog("restore: ${plan.entries.size} restored, done=${plan.done}")
+        if (plan.done) links.markRestoreDone()
+        return plan.entries.size
+    }
+
+    class RestoreEntry(val linkId: String, val uuid: String, val path: String)
+    /** [done] is false when Filen gave no answer for some record: that is not "the file is gone", so restore runs again at the next start. */
+    class RestorePlan(val entries: List<RestoreEntry>, val done: Boolean)
+
+    companion object {
+        fun planRestore(records: List<StackLink.OwnedRecord>, lookup: (String) -> FilenLookup?): RestorePlan {
+            val entries = ArrayList<RestoreEntry>()
+            var unanswered = false
+            for (r in records) {
+                val found = lookup(r.filenUuid)
+                if (found == null) { unanswered = true; continue }
+                if (!found.exists) continue
+                entries.add(RestoreEntry(r.linkId, r.filenUuid, found.path.ifEmpty { r.filenPath }))
+            }
+            return RestorePlan(entries, !unanswered)
+        }
     }
 
     /** Tells Stack about every linked file that is explicitly gone, once each. Call off the main thread. */
@@ -364,7 +381,7 @@ class StackSync(private val context: Context) {
         val where = filen.locate(uri) ?: return
         if (where.path.isEmpty() || where.path == known) return
         val err = stack.moved(id, StackLink.locators(where, uri))
-        android.util.Log.i("StackLink", "moved: $id '$known' -> '${where.path}': ${err ?: "sent"}")
+        StackLink.testLog("moved: $id '$known' -> '${where.path}': ${err ?: "sent"}")
         if (err == null) links.setFilenPath(id, where.path)
     }
 
