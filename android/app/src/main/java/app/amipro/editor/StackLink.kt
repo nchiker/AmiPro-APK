@@ -316,6 +316,7 @@ class StackSync(private val context: Context) {
                 modified = StackLink.lastModified(context, uri), hash = StackLink.sha256(bytes), uri = uri,
                 text = StackLink.clipText(text), preview = preview, protected = isProtected, filen = where,
             ))
+            android.util.Log.i("StackLink", "publish: link $linkId filen ${where?.uuid} '${where?.path}' -> ${if (result is ShareResult.Done) "done" else result.toString()}")
             if (result is ShareResult.Done) { links.keep(uri, linkId); links.setFilenPath(linkId, where?.path) }
             return result
         } finally { pdf.delete() }
@@ -362,7 +363,9 @@ class StackSync(private val context: Context) {
         val known = links.filenPath(id) ?: return
         val where = filen.locate(uri) ?: return
         if (where.path.isEmpty() || where.path == known) return
-        if (stack.moved(id, StackLink.locators(where, uri)) == null) links.setFilenPath(id, where.path)
+        val err = stack.moved(id, StackLink.locators(where, uri))
+        android.util.Log.i("StackLink", "moved: $id '$known' -> '${where.path}': ${err ?: "sent"}")
+        if (err == null) links.setFilenPath(id, where.path)
     }
 
     private fun displayName(uri: Uri): String = try {
