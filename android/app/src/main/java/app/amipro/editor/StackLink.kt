@@ -332,15 +332,18 @@ class StackSync(private val context: Context) {
         if (records == null) { android.util.Log.w("StackLink", "restore: Stack gave no list"); return 0 }
         android.util.Log.i("StackLink", "restore: ${records.size} record(s) with a filen locator")
         var restored = 0
+        var unanswered = false
         for (r in records) {
             val found = filen.lookup(r.filenUuid)
             android.util.Log.i("StackLink", "restore: lookup ${r.filenUuid} -> ${found?.exists}")
-            if (found == null || !found.exists) continue
+            if (found == null) { unanswered = true; continue }
+            if (!found.exists) continue
             links.keep(FilenLocator.documentUri(r.filenUuid), r.linkId)
             links.setFilenPath(r.linkId, found.path.ifEmpty { r.filenPath })
             restored++
         }
-        links.markRestoreDone()
+        // Filen not answering (not installed, locked, error) is not "the file is gone": try again at the next start.
+        if (!unanswered) links.markRestoreDone()
         return restored
     }
 

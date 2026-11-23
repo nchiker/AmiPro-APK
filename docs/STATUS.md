@@ -167,3 +167,13 @@ Stack's checks build with `list_owned` + this Ami Pro (checks package). Baseline
 - **Next step:** save a fresh synthetic .sam into Filen, share it, `pm clear` Ami Pro, start it, then Stack "Check linked documents": expect that record `live` again. Also prove Ami Pro's own `moved` (rename the file from Ami Pro while Filen sends no event). Log lines: `adb logcat -s StackLink`.
 - Local commits since 0.6.0 (all unreleased, nothing pushed): install explanation, automatic restore, shorter UI text, Get Stack action (releases/latest), restore diagnostics. Release (0.6.1) needs the owner's go-ahead.
 - Test phone state: Stack checks build links for Ami Pro are `missing`; Ami Pro data cleared.
+
+## Restore re-test: steps (written 2026-11-23; to run on the TEST phone `0A121JEC203530` only, `adb -s`)
+Needs installed: Stack's checks build `org.stackdocs.app.checks.linkcontract` WITH `list_owned` (versionCode 36 reported; confirm it answers `list_owned`), Filen Files `app.filenfiles` 0.4.7+ (code 14 reported), and Ami Pro built from this tree with `-PstackPackage=org.stackdocs.app.checks.linkcontract`, **release-signed** (Stack pins cert 9a387c70...; a debug build is refused). Release signing needs the owner's approval each time. `pm clear` only `app.amipro.editor`; do not clear or sign out of Stack or Filen.
+1. In Ami Pro: New document, type a line, Save into a Filen folder (name it `restore-t1.sam`). Share with Stack (More > Share with Stack). Stack lists it "Linked document - Ami Pro".
+2. `adb logcat -c`; `pm clear app.amipro.editor`; start Ami Pro (do NOT open or save anything).
+3. `adb logcat -d -s StackLink`: expect `restore: N record(s)...`, `lookup <uuid> -> true`.
+4. In Stack: "Check linked documents". Expect `restore-t1` **live** (not `missing`). Then Open in Ami Pro from Stack works, and a save re-publishes (same link id, no duplicate).
+5. Also check the new retry rule: with Filen force-stopped/unavailable at start the log shows no `markRestoreDone`; next start restores.
+6. Own `moved`: with the link live, rename `restore-t1.sam` inside Filen at a moment Filen sends no `moved` event (or read the Stack record's path before and after), restart Ami Pro; log should show Ami Pro's `moved` call, Stack's path changes. Proves the sweep, which 2026-11-22 could not.
+7. Cleanup: delete only `restore-t1*` files created for the test; note the phone state here.
