@@ -32,4 +32,4 @@ Rules: title 6 words or fewer; body 2 short sentences (about 25 words), one idea
 
 Not changed: titles ("Updates", "Share a password-protected file?"), buttons (Download, Install, Try again, Share anyway, Cancel, Not now), and the loss list before saving (it is the content the person decides on). "Continue" on the install explanation is the one new button; it only opens the Android settings page.
 
-Follow-up (same day): "Stack is not installed." now has a "Get Stack" action (opens https://github.com/nchiker/stack/releases/latest) on the start screen and in the editor message bar. The raw error text removed from messages is kept in the log (`adb logcat -s StackLink Updates`), not on screen; no "Details" link was built.
+Follow-up (same day): "Stack is not installed." now has a "Get Stack" action (opens https://github.com/nchiker/stack/releases/tag/v0.19.0) on the start screen and in the editor message bar. The raw error text removed from messages is kept in the log (`adb logcat -s StackLink Updates`), not on screen; no "Details" link was built.

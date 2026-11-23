@@ -205,7 +205,7 @@ class StackLink(private val context: Context, private val stackPackage: String =
         }
 
         const val NOT_INSTALLED = "Stack is not installed."
-        const val RELEASES_URL = "https://github.com/nchiker/stack/releases/latest"
+        const val RELEASES_URL = "https://github.com/nchiker/stack/releases/tag/v0.19.0"
         const val MAX_TEXT_CHARS = 1_000_000
         const val MAX_PREVIEW_BYTES = 32L * 1024 * 1024
 
