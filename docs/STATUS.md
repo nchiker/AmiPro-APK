@@ -156,3 +156,8 @@ Built (`27ce68c`): for a document whose URI is Filen Files' (`app.filenfiles.doc
 - Version 0.6.0 (versionCode 6) and notes are prepared in `dist/RELEASE_NOTES.md`; not built as a release, not published.
 
 - **0.6.0 published (2026-11-22, on the owner's go-ahead):** tag `v0.6.0`, https://github.com/nchiker/AmiPro-APK/releases/tag/v0.6.0 (APK + SHA256SUMS), signed with the release key (cert 9a387c70...868a, checked with apksigner), default Stack package. Needs Filen Files 0.4.7+. The `moved` caveat above still stands.
+
+## After 0.6.0 (local commits, NOT released, NOT yet run on a device)
+- **Explanation before Android's install-unknown-apps page** (`Updates.kt`, `MainActivity.kt`): tapping Install without the permission first shows a short explanation and a Continue button; only Continue opens the Settings page. No network change.
+- **Automatic restore of the link map** (`StackSync.restoreLinks`, runs at app start, once, only when the link map is empty): asks Stack's provider `list_owned` (`{contract:1, owner}` -> `records` JSON of `{link_id, title, hash, modified, state, locators[filen only]}`, agreed with the Stack session), confirms each Filen file with Filen's `lookup(uuid)` and rebuilds uri -> link_id with Stack's own ids. Filen files only; others stay for Stack's "Set up again". Needs a Stack build that has `list_owned` (Stack will say when it is on the test phone).
+- **Daily update check: not built** (owner/orchestrator: skip; Stack's Companion-apps screen covers updates). **Stack certificate pin** is already a set (`StackLinkProvider.STACK_CERTIFICATES`): rotation = add one string. **Share all my documents button: dropped** in favour of the automatic restore.

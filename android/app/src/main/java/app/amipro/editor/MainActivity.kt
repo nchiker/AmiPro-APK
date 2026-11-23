@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         // Slice 4: if a file shared with Stack was deleted, tell Stack (only when the system says it does not exist).
-        Thread { try { StackSync(applicationContext).sweep() } catch (e: Exception) { } }.start()
+        Thread { try { StackSync(applicationContext).restoreLinks(); StackSync(applicationContext).sweep() } catch (e: Exception) { } }.start()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -306,7 +306,7 @@ private fun UpdateDialog(updater: Updater, context: android.content.Context, onD
                     }
                     is UpdateState.Downloading -> Text("Downloading ${state.version.removePrefix("v")}... ${state.percent}%")
                     is UpdateState.Ready -> Text("Version ${state.version.removePrefix("v")} is downloaded and checked. Android will ask you to confirm the installation; your documents are not touched.")
-                    is UpdateState.NeedsPermission -> Text("Allow AmiPro to install apps on the page Android just opened, then come back and tap Install again.")
+                    is UpdateState.NeedsPermission -> if (!state.opened) Text("Android only lets an app install updates after you allow it once. Next, Android shows a settings page for AmiPro: switch on \"Allow from this source\", then come back here. AmiPro will not install anything without your confirmation, and your documents are not touched.") else Text("Allow AmiPro to install apps on the page Android just opened, then come back and tap Install again.")
                     is UpdateState.Installing -> Text("Waiting for Android's installer...")
                     is UpdateState.Failed -> Text(state.reason, color = MaterialTheme.colorScheme.error)
                 }
@@ -315,7 +315,8 @@ private fun UpdateDialog(updater: Updater, context: android.content.Context, onD
         confirmButton = {
             when (state) {
                 is UpdateState.Available -> TextButton(onClick = updater::download) { Text("Download") }
-                is UpdateState.Ready, is UpdateState.NeedsPermission -> TextButton(onClick = { updater.install(context) }) { Text("Install") }
+                is UpdateState.Ready -> TextButton(onClick = { updater.install(context) }) { Text("Install") }
+                is UpdateState.NeedsPermission -> TextButton(onClick = { updater.install(context) }) { Text(if (state.opened) "Install" else "Continue") }
                 is UpdateState.Failed -> TextButton(onClick = updater::check) { Text("Try again") }
                 else -> {}
             }

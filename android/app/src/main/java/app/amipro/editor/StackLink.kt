@@ -36,6 +36,10 @@ class LinkMap(context: Context) {
         prefs.edit().putStringSet("gone", (prefs.getStringSet("gone", emptySet()) ?: emptySet()) + id).apply()
     }
 
+    @Synchronized fun isEmpty(): Boolean = read().length() == 0
+    @Synchronized fun restoreDone(): Boolean = prefs.getBoolean("restore_done", false)
+    @Synchronized fun markRestoreDone() { prefs.edit().putBoolean("restore_done", true).apply() }
+
     /** The Filen path Stack was last told for this link (to notice a move), or null. */
     @Synchronized fun filenPath(id: String): String? = prefs.getString("filen_$id", null)
     @Synchronized fun setFilenPath(id: String, path: String?) { prefs.edit().apply { if (path == null) remove("filen_$id") else putString("filen_$id", path) }.apply() }
@@ -77,7 +81,21 @@ class FilenLocator(private val context: Context) {
             Where(uuid, a.getString("path").orEmpty())
         } catch (e: Exception) { null }
     }
+
+    /** `lookup(uuid)`: is that Filen file there (and not in the trash)? Null when Filen cannot say. */
+    fun lookup(uuid: String): FilenLookup? = try {
+        val a = context.contentResolver.call(authority, "lookup", uuid, null)
+        if (a == null || a.getString("error") != null) null
+        else FilenLookup(a.getBoolean("exists") && !a.getBoolean("trashed"), a.getString("path").orEmpty())
+    } catch (e: Exception) { null }
+
+    companion object {
+        /** The document URI Filen Files uses for a file (the form `locate` is given). */
+        fun documentUri(uuid: String): Uri = Uri.parse("content://app.filenfiles.documents/document/" + Uri.encode("filen:$uuid"))
+    }
 }
+
+class FilenLookup(val exists: Boolean, val path: String)
 
 class LinkDocument(
     val linkId: String, val title: String, val modified: Long, val hash: String,
@@ -135,6 +153,29 @@ class StackLink(private val context: Context, private val stackPackage: String =
             val answer = resolver.call(authority, "moved", body.toString(), null) ?: return "no_answer"
             answer.getString("error")?.takeIf { it != "unknown_link" }
         } catch (e: SecurityException) { "untrusted" } catch (e: Exception) { "unreachable" }
+    }
+
+    class OwnedRecord(val linkId: String, val filenUuid: String, val filenPath: String)
+
+    /** The link records Stack holds for this app that have a filen locator. Null if Stack cannot answer now (not installed, locked, refused). */
+    fun listOwned(): List<OwnedRecord>? {
+        if (!installed()) return null
+        return try {
+            val body = JSONObject().put("contract", 1).put("owner", context.packageName)
+            val a = resolver.call(authority, "list_owned", body.toString(), null) ?: return null
+            if (a.getString("error") != null) return null
+            val arr = JSONArray(a.getString("records") ?: return null)
+            (0 until arr.length()).mapNotNull { i ->
+                val r = arr.optJSONObject(i) ?: return@mapNotNull null
+                val id = r.optString("link_id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val locs = r.optJSONArray("locators") ?: return@mapNotNull null
+                for (j in 0 until locs.length()) {
+                    val l = locs.optJSONObject(j) ?: continue
+                    if (l.optString("type") == "filen" && l.optString("uuid").isNotEmpty()) return@mapNotNull OwnedRecord(id, l.getString("uuid"), l.optString("path"))
+                }
+                null
+            }
+        } catch (e: Exception) { null }
     }
 
     private fun stage(token: String, part: String, input: java.io.InputStream) {
@@ -275,6 +316,26 @@ class StackSync(private val context: Context) {
             if (result is ShareResult.Done) { links.keep(uri, linkId); links.setFilenPath(linkId, where?.path) }
             return result
         } finally { pdf.delete() }
+    }
+
+    /**
+     * New phone: Ami Pro has no link map, but Stack still holds the link ids. For each record with a filen locator whose file
+     * Filen confirms, rebuild the map (document URI -> Stack's own link id). Files without a filen locator stay as they are
+     * (Stack's "Set up again"). Runs once; skipped if the map has entries. Call off the main thread. Returns how many were restored.
+     */
+    fun restoreLinks(): Int {
+        if (!links.isEmpty() || links.restoreDone()) return 0
+        val records = stack.listOwned() ?: return 0
+        var restored = 0
+        for (r in records) {
+            val found = filen.lookup(r.filenUuid) ?: continue
+            if (!found.exists) continue
+            links.keep(FilenLocator.documentUri(r.filenUuid), r.linkId)
+            links.setFilenPath(r.linkId, found.path.ifEmpty { r.filenPath })
+            restored++
+        }
+        links.markRestoreDone()
+        return restored
     }
 
     /** Tells Stack about every linked file that is explicitly gone, once each. Call off the main thread. */

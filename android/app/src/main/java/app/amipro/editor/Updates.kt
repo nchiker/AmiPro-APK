@@ -35,7 +35,8 @@ sealed interface UpdateState {
     /** Android's confirmation screen is up (or was); the result arrives from [InstallResultReceiver]. */
     data class Installing(val version: String) : UpdateState
     /** The person must allow this app to install apps (Android's own settings page was opened). */
-    data class NeedsPermission(val version: String) : UpdateState
+    /** [opened]: false = explaining first; true = Android's settings page was opened and we wait for the person to come back. */
+    data class NeedsPermission(val version: String, val opened: Boolean = false) : UpdateState
     data class Failed(val reason: String) : UpdateState
 }
 
@@ -97,7 +98,9 @@ class Updater(private val app: Application) {
     fun install(context: Context) {
         val version = when (val s = state) { is UpdateState.Ready -> s.version; is UpdateState.NeedsPermission -> s.version; else -> return }
         if (!app.packageManager.canRequestPackageInstalls()) {
-            state = UpdateState.NeedsPermission(version)
+            val explained = (state as? UpdateState.NeedsPermission)?.opened == false
+            if (!explained) { state = UpdateState.NeedsPermission(version, opened = false); return }
+            state = UpdateState.NeedsPermission(version, opened = true)
             context.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
