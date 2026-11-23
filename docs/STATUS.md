@@ -189,3 +189,22 @@ Builds: Stack checks build `org.stackdocs.app.checks.linkcontract` 0.19.0 (code 
 - **Signing record:** three release-signed builds were made for this test, all with `-PstackPackage=...checks.linkcontract`: (1) from `b8cf8ef`, (2) the same plus the `moved` log line (uncommitted source), (3) plus the `publish` log line (= `0675a91`; the one on the phone). The owner's yes in the Ami Pro window was "build it with the release key for the test phone"; the two rebuilds were made under that sentence without asking again. No more signed builds without a fresh yes.
 - **Logging (after `0675a91`):** names, paths, UUIDs, link ids and Stack's error text go through `StackLink.testLog`, which logs only when `STACK_PACKAGE` is not the real `org.stackdocs.app` (a checks build); exceptions log the class name only in a real build (their message can hold a document URI). The build now on the phone is from `0675a91` and still logs them; a default release logs none.
 - **PHONE STATE: the flagged checks-package, release-signed build with these two log lines stays on the phone. It must NOT be used as the 0.6.1 release** (wrong Stack package; build the release without `-PstackPackage`).
+
+## 0.6.1 readiness (2026-11-23, computer side; nothing bumped, signed, tagged or pushed)
+- **Dropped from 0.6.1: answering `stat` from Filen's lookup when there is no grant.** Stack's LinkChecker treats `exists=true` without a valid hash as unreachable (no "live, unverified" state), so it cannot be expressed. Stack will only reword restored records ("Open it once in Ami Pro"). A contract change is an after-weekend owner decision. Until then a restored link is live only after its file is opened once in Ami Pro.
+- **Commits since 0.6.0 and what a device has seen** (phone ran the code of `0675a91`, checks-package, release-signed):
+  - `50472f6` install explanation + automatic restore: restore and the "open once" behaviour DEVICE-CHECKED (2026-11-23, at 0675a91). The install-explanation dialog: NOT checked on a device.
+  - `0fff65c`, `11253dd`, `3c3843d`, `d270714` shorter text, Get Stack action: NOT checked on a device.
+  - `d98b010` restore diagnostics: logs seen on device (at 0675a91).
+  - `b8cf8ef` retry-restore fix: unit-tested only (`RestorePlanTest`), not on a device.
+  - `0675a91` publish/moved log lines: `moved` sent, seen on device. Stack's acceptance of it not isolated.
+  - `7f04682`, `6b43c92` test-only logging, restore planner, trashed handling, share-failure log: unit tests + debug build only, NEVER on a device.
+- **Final-build device plan** (needs the owner's go-ahead and a signed build; test phone `0A121JEC203530`, `adb -s`, no uninstall, no `pm clear` of Stack or Filen):
+  1. Bump `versionCode` 7 / `versionName` 0.6.1, build WITHOUT `-PstackPackage` (default `org.stackdocs.app`), sign with the release key, check cert 9a387c70...868a with apksigner. The phone now has versionCode 6 (the flagged checks build), so 7 installs over it with `adb install -r` (same key, higher code). Note it points at the real Stack package, so the checks-build links stop working until the checks Stack is selected again; check against the real Stack the phone has (0.19.0, `org.stackdocs.app`), or leave the install-over test to a throwaway and keep a checks build for Stack-link checks.
+  2. Upgrade keeps data: recent files and link map still there after `install -r`; `logcat -s StackLink` shows no ids or paths.
+  3. Install-explanation dialog: Check for updates > Install without the permission shows the explanation, Continue opens the Settings page, back returns. Reset the permission after.
+  4. Get Stack: with Stack absent (or from the dialog path that offers it) opens Stack's releases/latest page; with Stack present nothing changes.
+  5. Share a fresh synthetic file to Stack; edit, save; Stack updates; Open in Ami Pro works.
+  6. Restore after `pm clear app.amipro.editor` (Ami Pro only): link map rebuilt, Stack shows the record only after the file is opened once. Also Filen not answering at first start, then answering: restore happens on the second start.
+  7. Text check: shorter dialog text matches `docs/UI_TEXT_REVIEW.md`.
+  8. Release step (owner): tag `v0.6.1`, APK + SHA256SUMS, notes from `dist/RELEASE_NOTES_0.6.1_DRAFT.md` renamed, push main and tag.
