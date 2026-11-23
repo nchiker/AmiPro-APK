@@ -1,6 +1,7 @@
 package app.amipro.editor
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -249,7 +250,13 @@ private fun StartScreen(vm: EditorViewModel, onOpen: () -> Unit, onUpdates: () -
         Text("AmiPro", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 8.dp))
         ActionRow(Icons.Filled.FolderOpen, "Open a document", "Ami Pro .sam or .amipro files", !vm.busy, onOpen)
         ActionRow(Icons.Filled.NoteAdd, "New document", "Start with a blank page", !vm.busy, vm::newDocument)
-        vm.message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+        vm.message?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            if (it == StackLink.NOT_INSTALLED) {
+                val ctx = LocalContext.current
+                TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(StackLink.RELEASES_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Get Stack") }
+            }
+        }
         HorizontalDivider(Modifier.padding(top = 8.dp))
         Text("Recent", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp))

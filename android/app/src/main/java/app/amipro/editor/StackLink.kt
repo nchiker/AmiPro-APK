@@ -111,24 +111,25 @@ class StackLink(private val context: Context, private val stackPackage: String =
     fun installed(): Boolean = try { context.packageManager.getPackageInfo(stackPackage, 0); true } catch (e: Exception) { false }
 
     fun share(doc: LinkDocument): ShareResult {
-        if (!installed()) return ShareResult.Failed("Stack is not installed.")
+        if (!installed()) return ShareResult.Failed(NOT_INSTALLED)
         var token: String? = null
         try {
             val versions = resolver.call(authority, "contract", null, null)
                 ?: return ShareResult.Failed("Stack did not answer. Open Stack, then try again.")
             if (1 !in versions.getInt("min", 1)..versions.getInt("max", 0)) return ShareResult.Failed("Update Stack and Ami Pro, then try again.")
             val begun = resolver.call(authority, "begin", record(doc).toString(), null) ?: return ShareResult.Failed("Stack did not answer.")
-            begun.getString("error")?.let { return ShareResult.Failed("Stack did not accept this document.") }
+            begun.getString("error")?.let { android.util.Log.w("StackLink", "begin refused: $it ${begun.getString("message").orEmpty()}"); return ShareResult.Failed("Stack did not accept this document.") }
             token = begun.getString("token") ?: return ShareResult.Failed("Stack did not answer.")
             stage(token, "text", doc.text.toByteArray(Charsets.UTF_8).inputStream())
             doc.preview?.let { f -> f.inputStream().use { stage(token, "preview", it) } }
             val done = resolver.call(authority, "commit", token, null) ?: return ShareResult.Failed("Stack did not answer.")
-            done.getString("error")?.let { return ShareResult.Failed("Stack did not accept this document.") }
+            done.getString("error")?.let { android.util.Log.w("StackLink", "commit refused: $it ${done.getString("message").orEmpty()}"); return ShareResult.Failed("Stack did not accept this document.") }
             token = null
             return ShareResult.Done(done.getBoolean("created"), done.getBoolean("content_changed"))
         } catch (e: SecurityException) {
             return ShareResult.Failed("Stack does not accept this copy of Ami Pro.")
         } catch (e: Exception) {
+            android.util.Log.w("StackLink", "share failed", e)
             return ShareResult.Failed("Could not reach Stack.")
         } finally {
             token?.let { try { resolver.call(authority, "abort", it, null) } catch (e: Exception) { } }
@@ -203,6 +204,8 @@ class StackLink(private val context: Context, private val stackPackage: String =
             put(JSONObject().put("type", "saf").put("uri", uri.toString()))
         }
 
+        const val NOT_INSTALLED = "Stack is not installed."
+        const val RELEASES_URL = "https://github.com/nchiker/stack/releases/latest"
         const val MAX_TEXT_CHARS = 1_000_000
         const val MAX_PREVIEW_BYTES = 32L * 1024 * 1024
 

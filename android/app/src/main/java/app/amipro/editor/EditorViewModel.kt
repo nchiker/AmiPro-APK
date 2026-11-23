@@ -492,7 +492,7 @@ class EditorViewModel(private val app: Application) {
         val uri = source
         if (doc == null || uri == null) { message = "Save the document first, then share."; return }
         if (edited) { message = "Save your changes first."; return }
-        if (!stack.installed()) { message = "Stack is not installed."; return }
+        if (!stack.installed()) { message = StackLink.NOT_INSTALLED; return }
         if (protectedFile && !confirmedProtected) { pendingProtectedShare = true; return }
         val snapshot = snapshotForStack() ?: return
         viewModelScope.launch {
@@ -501,7 +501,7 @@ class EditorViewModel(private val app: Application) {
                 val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot read this file") }
                 send(uri, bytes, snapshot)
             } catch (e: kotlinx.coroutines.CancellationException) { throw e
-            } catch (e: Exception) { ShareResult.Failed("Could not share this document.")
+            } catch (e: Exception) { android.util.Log.w("StackLink", "share failed", e); ShareResult.Failed("Could not share this document.")
             } finally { busy = false }
             message = when (result) {
                 is ShareResult.Done -> if (result.created) "Shared with Stack" else if (result.changed) "Stack updated" else "Stack already has this version"

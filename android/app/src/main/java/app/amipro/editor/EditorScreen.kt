@@ -17,6 +17,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,9 +73,17 @@ fun EditorScreen(
 ) {
     var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val scroll = rememberScrollState()
     LaunchedEffect(vm.message) {
-        vm.message?.let { snackbar.showSnackbar(it); vm.message = null }
+        vm.message?.let {
+            val getStack = it == StackLink.NOT_INSTALLED
+            vm.message = null
+            val r = snackbar.showSnackbar(it, actionLabel = if (getStack) "Get Stack" else null, duration = if (getStack) SnackbarDuration.Long else SnackbarDuration.Short)
+            if (getStack && r == SnackbarResult.ActionPerformed) {
+                ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(StackLink.RELEASES_URL)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },

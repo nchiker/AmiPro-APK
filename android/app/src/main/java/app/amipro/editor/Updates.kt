@@ -74,7 +74,7 @@ class Updater(private val app: Application) {
                     UpdateState.Available(latest.version, latest.notes)
                 } else UpdateState.UpToDate(installedVersion)
             } catch (e: Exception) {
-                UpdateState.Failed("Could not check for updates. Check your connection.")
+                android.util.Log.w("Updates", "check failed", e).let { UpdateState.Failed("Could not check for updates. Check your connection.") }
             }
         }
     }
@@ -89,7 +89,7 @@ class Updater(private val app: Application) {
                 UpdateState.Ready(r.version)
             } catch (e: Exception) {
                 dir.deleteRecursively()
-                UpdateState.Failed("The download failed. Nothing was changed.")
+                android.util.Log.w("Updates", "download failed", e).let { UpdateState.Failed("The download failed. Nothing was changed.") }
             }
         }
     }
@@ -111,7 +111,7 @@ class Updater(private val app: Application) {
             try {
                 withContext(Dispatchers.IO) { startSession() }
             } catch (e: Exception) {
-                state = UpdateState.Failed("Android could not start the install. Nothing was changed.")
+                android.util.Log.w("Updates", "install failed", e); state = UpdateState.Failed("Android could not start the install. Nothing was changed.")
             }
         }
     }
@@ -121,8 +121,8 @@ class Updater(private val app: Application) {
             PackageInstaller.STATUS_SUCCESS -> { dir.deleteRecursively(); UpdateState.Idle }
             PackageInstaller.STATUS_FAILURE_ABORTED -> (release?.version ?: installedVersion).let { UpdateState.Ready(it) }
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
-                UpdateState.Failed("Android refused this update. Nothing was changed.")
-            else -> UpdateState.Failed("The update did not install. Nothing was changed.")
+                android.util.Log.w("Updates", "refused: $detail").let { UpdateState.Failed("Android refused this update. Nothing was changed.") }
+            else -> android.util.Log.w("Updates", "install status $status: $detail").let { UpdateState.Failed("The update did not install. Nothing was changed.") }
         }
     }
 
