@@ -138,3 +138,12 @@ Device check (2026-11-21, against Stack's TEST build): stat, refresh and the pro
 revokes AmiPro's access (SecurityException, and the persisted grant is gone too), so a deletion is not detectable there: the record
 stays "unreachable" and the user removes it by hand in Stack. The owner chose to stay cautious (no guessing from lost access).
 `removed` fires only when the provider says file-not-found with no row left. Not done: reason "trashed", `moved`, `unshared`, `delete`. Waiting for Stack's slice 4 build on the test phone to check end to end.
+
+## Slice 4 end-to-end against Stack HEAD (2026-11-22, test phone 0A121JEC203530 only)
+Release-signed AmiPro 0.5.0 built with `-PstackPackage=org.stackdocs.app.checks.linkcontract` (needs a JDK with javac, e.g. `JAVA_HOME=~/.local/share/filen-jdk21`) against Stack's checks build (schema 15). Synthetic document made in the app (`e2es4.sam`, saved through the create-file screen).
+- **Share**: listed in Stack as "Linked document - Ami Pro", text searchable.
+- **stat**: "Check linked documents" left it live; after the file was replaced from outside (adb push, new hash) Stack showed "This document changed in Ami Pro since Stack saved it" + "Update saved copy".
+- **refresh**: "Update saved copy" re-published; modified date and preview updated (the first preview had been "could not be drawn", the refreshed one drew).
+- **removed**: file deleted (adb rm), AmiPro restarted (sweep), Stack check: "Can't reach Ami Pro right now. Nothing was removed" (unreachable, not removed). Same as the 2026-11-21 finding: a deleted Downloads file revokes our grant, so a deletion is not detectable; the owner chose to stay cautious. `removed` is only sent when the provider says file-not-found. Not exercised on device.
+- Left on the phone: the "e2es4" link in the Stack checks build (unreachable), AmiPro release 0.5.0 (checks-package build) installed.
+
