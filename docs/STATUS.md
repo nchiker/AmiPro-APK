@@ -209,3 +209,11 @@ Builds: Stack checks build `org.stackdocs.app.checks.linkcontract` 0.19.0 (code 
   7. Text check: shorter dialog text matches `docs/UI_TEXT_REVIEW.md`.
   8. Release step (owner): tag `v0.6.1`, APK + SHA256SUMS, notes from `dist/RELEASE_NOTES_0.6.1_DRAFT.md` renamed, push main and tag.
 - **Plan change (2026-11-23):** `list_owned` is not in released Stack 0.19.0 (unreleased). Final-build step 6 (restore after `pm clear`) is "NOT RUN" unless Stack 0.20.0 is on the phone; it is not a failure. In the real Stack use only documents created for the test, and remove only those. The upgrade-over step runs against the real Stack (`org.stackdocs.app`), so the earlier checks-package links stop working.
+
+## 0.6.1 device run (2026-11-23, test phone, release-signed default-package build, sha256 39f6f506..., commit b5e8359; real Stack 0.19.0 `org.stackdocs.app`)
+- **PASS** install over the flagged 0.6.0-code build with `adb install -r` (6 -> 7); recent files kept (3 entries); no `StackLink` log lines at start.
+- **PASS** Share a fresh synthetic file (`v061-test.sam`, Downloads) to the real Stack: listed "Linked document - Ami Pro"; edit + Save re-published (Stack search for the new word finds it); Stack's "Open in Ami Pro" opens it. No ids, paths or UUIDs in logcat for `StackLink` or the app.
+- **PASS** Check for updates: "You have the newest version (0.6.1)".
+- **NOT RUN** install-explanation dialog (needs a published release above 0.6.1 to reach Install); Get Stack with Stack absent (Stack is installed; would need an uninstall); restore after `pm clear` (real Stack 0.19.0 has no `list_owned`; needs Stack 0.20.0); the Filen-not-answering retry; the UI text comparison by eye.
+- Cleanup: my `v061-test` record removed from the real Stack (Recently deleted, 30 days) and `v061-test.sam` deleted from Downloads. Nothing else of Stack's or Filen's touched. `nested-t2.sam` and its checks-build link are still in place for Filen.
+- The phone now runs the default-package 0.6.1 candidate; the earlier checks-package links are not usable from it.
