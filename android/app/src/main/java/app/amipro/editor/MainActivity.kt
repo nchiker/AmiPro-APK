@@ -176,7 +176,7 @@ private fun App(vm: EditorViewModel) {
     if (vm.pendingProtectedShare) AlertDialog(
         onDismissRequest = { vm.pendingProtectedShare = false },
         title = { Text("Share a password-protected file?") },
-        text = { Text("Stack will keep readable text and a preview of this document without the password. Share only if that is what you want.") },
+        text = { Text("Stack will keep readable text and a preview, without the password.") },
         confirmButton = { TextButton(onClick = { vm.shareWithStack(confirmedProtected = true) }) { Text("Share anyway") } },
         dismissButton = { TextButton(onClick = { vm.pendingProtectedShare = false }) { Text("Cancel") } },
     )
@@ -297,17 +297,17 @@ private fun UpdateDialog(updater: Updater, context: android.content.Context, onD
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (state) {
                     is UpdateState.Idle -> Text("Installed version ${updater.installedVersion}.")
-                    is UpdateState.Checking -> Text("Looking for a newer version on GitHub...")
+                    is UpdateState.Checking -> Text("Checking for updates...")
                     is UpdateState.UpToDate -> Text("You have the newest version (${state.installed}).")
                     is UpdateState.Available -> {
-                        Text("Version ${state.version.removePrefix("v")} is available (installed: ${updater.installedVersion}).")
+                        Text("Version ${state.version.removePrefix("v")} is available. You have ${updater.installedVersion}.")
                         if (state.notes.isNotBlank()) Text(state.notes, style = MaterialTheme.typography.bodySmall)
-                        Text("The file is downloaded over a secure connection and checked against the installed app before anything is installed.", style = MaterialTheme.typography.bodySmall)
+                        Text("It is checked before it is installed.", style = MaterialTheme.typography.bodySmall)
                     }
                     is UpdateState.Downloading -> Text("Downloading ${state.version.removePrefix("v")}... ${state.percent}%")
-                    is UpdateState.Ready -> Text("Version ${state.version.removePrefix("v")} is downloaded and checked. Android will ask you to confirm the installation; your documents are not touched.")
-                    is UpdateState.NeedsPermission -> if (!state.opened) Text("Android only lets an app install updates after you allow it once. Next, Android shows a settings page for AmiPro: switch on \"Allow from this source\", then come back here. AmiPro will not install anything without your confirmation, and your documents are not touched.") else Text("Allow AmiPro to install apps on the page Android just opened, then come back and tap Install again.")
-                    is UpdateState.Installing -> Text("Waiting for Android's installer...")
+                    is UpdateState.Ready -> Text("Version ${state.version.removePrefix("v")} is ready. Android will ask you to confirm.")
+                    is UpdateState.NeedsPermission -> if (!state.opened) Text("Android needs your OK once. Next, switch on \"Allow from this source\" for AmiPro, then come back.") else Text("Switch on \"Allow from this source\", then tap Install again.")
+                    is UpdateState.Installing -> Text("Installing...")
                     is UpdateState.Failed -> Text(state.reason, color = MaterialTheme.colorScheme.error)
                 }
             }

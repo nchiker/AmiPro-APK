@@ -74,7 +74,7 @@ class Updater(private val app: Application) {
                     UpdateState.Available(latest.version, latest.notes)
                 } else UpdateState.UpToDate(installedVersion)
             } catch (e: Exception) {
-                UpdateState.Failed("Could not look for updates: ${e.message ?: "no connection"}. Nothing was changed.")
+                UpdateState.Failed("Could not check for updates. Check your connection.")
             }
         }
     }
@@ -89,7 +89,7 @@ class Updater(private val app: Application) {
                 UpdateState.Ready(r.version)
             } catch (e: Exception) {
                 dir.deleteRecursively()
-                UpdateState.Failed("${e.message ?: "The download failed"}. Nothing was changed.")
+                UpdateState.Failed("The download failed. Nothing was changed.")
             }
         }
     }
@@ -111,7 +111,7 @@ class Updater(private val app: Application) {
             try {
                 withContext(Dispatchers.IO) { startSession() }
             } catch (e: Exception) {
-                state = UpdateState.Failed("Android could not start the installation: ${e.message ?: "unknown error"}. Nothing was changed.")
+                state = UpdateState.Failed("Android could not start the install. Nothing was changed.")
             }
         }
     }
@@ -121,8 +121,8 @@ class Updater(private val app: Application) {
             PackageInstaller.STATUS_SUCCESS -> { dir.deleteRecursively(); UpdateState.Idle }
             PackageInstaller.STATUS_FAILURE_ABORTED -> (release?.version ?: installedVersion).let { UpdateState.Ready(it) }
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
-                UpdateState.Failed("Android refused the update because it does not match the installed app (${detail ?: "signature"}). Nothing was changed.")
-            else -> UpdateState.Failed("Android could not install the update (${detail ?: "code $status"}). Nothing was changed.")
+                UpdateState.Failed("Android refused this update. Nothing was changed.")
+            else -> UpdateState.Failed("The update did not install. Nothing was changed.")
         }
     }
 

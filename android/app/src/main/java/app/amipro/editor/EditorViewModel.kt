@@ -490,9 +490,9 @@ class EditorViewModel(private val app: Application) {
     fun shareWithStack(confirmedProtected: Boolean = false) {
         pendingProtectedShare = false
         val uri = source
-        if (doc == null || uri == null) { message = "Save the document to a file first, then share it with Stack."; return }
-        if (edited) { message = "Save your changes first, so Stack gets what is in the file."; return }
-        if (!stack.installed()) { message = "Stack is not installed on this phone. Install Stack to share documents with it."; return }
+        if (doc == null || uri == null) { message = "Save the document first, then share."; return }
+        if (edited) { message = "Save your changes first."; return }
+        if (!stack.installed()) { message = "Stack is not installed."; return }
         if (protectedFile && !confirmedProtected) { pendingProtectedShare = true; return }
         val snapshot = snapshotForStack() ?: return
         viewModelScope.launch {
@@ -501,7 +501,7 @@ class EditorViewModel(private val app: Application) {
                 val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot read this file") }
                 send(uri, bytes, snapshot)
             } catch (e: kotlinx.coroutines.CancellationException) { throw e
-            } catch (e: Exception) { ShareResult.Failed("Could not share: ${e.message}")
+            } catch (e: Exception) { ShareResult.Failed("Could not share this document.")
             } finally { busy = false }
             message = when (result) {
                 is ShareResult.Done -> if (result.created) "Shared with Stack" else if (result.changed) "Stack updated" else "Stack already has this version"
@@ -518,7 +518,7 @@ class EditorViewModel(private val app: Application) {
         viewModelScope.launch {
             val result = try { send(uri, bytes, snapshot) } catch (e: kotlinx.coroutines.CancellationException) { throw e
             } catch (e: Exception) { ShareResult.Failed("${e.message}") }
-            if (result is ShareResult.Failed) message = "Saved, but Stack was not updated: ${result.reason}"
+            if (result is ShareResult.Failed) message = "Saved. Stack was not updated."
         }
     }
 
