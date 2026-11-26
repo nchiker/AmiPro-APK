@@ -32,6 +32,9 @@ object Sharing {
     const val EXTRA_MESSAGE = "app.filenfiles.extra.MESSAGE"
     const val USER_CANCELLED = "user_cancelled"
 
+    /** The menu text for putting this document in Stack's own search. It is not about the partner, so it does not say "Share". */
+    const val SHOW_IN_STACK = "Show in Stack search"
+
     /**
      * Null status (Filen missing or call refused) hides the item. [state] is Filen's `share_state` for the document; null =
      * unknown (offline, not answered): Share is offered. Shared -> Stop; shared only through a folder -> a disabled note.

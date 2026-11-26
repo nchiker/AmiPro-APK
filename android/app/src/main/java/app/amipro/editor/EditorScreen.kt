@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
@@ -108,16 +109,17 @@ fun EditorScreen(
                         DropdownMenuItem(text = { Text("Find and replace...") }, onClick = { menu = false; vm.openFind() })
                         DropdownMenuItem(text = { Text("Pictures and tables...") }, onClick = { menu = false; onObjects() })
                         DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
-                        DropdownMenuItem(text = { Text("Share with Stack") }, onClick = { menu = false; vm.shareWithStack() }, enabled = !vm.busy)
-                        vm.shareItems.forEach { item ->
-                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label; is ShareItem.Via -> item.label }
-                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy && item !is ShareItem.Via)
-                        }
+                        DropdownMenuItem(text = { Text(Sharing.SHOW_IN_STACK) }, onClick = { menu = false; vm.shareWithStack() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
                         DropdownMenuItem(text = { Text("Appearance...") }, onClick = { menu = false; onTheme() })
                         DropdownMenuItem(text = { Text("Check for updates...") }, onClick = { menu = false; onUpdates() })
+                        if (vm.shareItems.isNotEmpty()) HorizontalDivider()
+                        vm.shareItems.forEach { item ->
+                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label; is ShareItem.Via -> item.label }
+                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy && item !is ShareItem.Via)
+                        }
                     }
                 },
             )

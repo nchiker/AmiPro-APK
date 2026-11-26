@@ -33,4 +33,9 @@ class SharingTest {
         assertEquals("Couldn't share: No connection.", Sharing.resultMessage(false, null, false, "Sam", "offline", "No connection."))
         assertEquals("Couldn't share: try again.", Sharing.resultMessage(false, null, false, "Sam", "failed", null))
     }
+    @Test fun stackSearchItemIsNotAShareItem() {
+        assertEquals("Show in Stack search", Sharing.SHOW_IN_STACK)
+        val partnerLabels = listOf(PartnerStatus("connected", "Sam"), PartnerStatus("none", "")).flatMap { labels(it, true) + labels(it, false) }
+        assertTrue(partnerLabels.none { it == Sharing.SHOW_IN_STACK || it.contains("Stack") })
+    }
 }

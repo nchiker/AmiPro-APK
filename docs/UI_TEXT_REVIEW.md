@@ -40,3 +40,12 @@ Follow-up (same day): "Stack is not installed." now has a "Get Stack" action (op
 | Sharing.kt | Menu: "Share with [name]", "Share with partner…", "Share with [name]…" (document not in Filen), "Stop sharing with [name]" |
 | Sharing.kt | Snackbars: "Shared with [name]", "Stopped sharing", "Couldn't share: [Filen's message, or try again.]" (nothing on cancel) |
 | MainActivity.kt | Dialog "Save it to Filen first": "Sharing works on files in Filen. Save a copy there, then share." Buttons Save, Cancel |
+
+## Menu: Stack search item renamed, partner items grouped (folder-sharing branch)
+| File | Before | After |
+|---|---|---|
+| EditorScreen.kt / Sharing.kt | "Share with Stack" (menu) | "Show in Stack search" |
+| EditorViewModel.kt | Snackbar "Shared with Stack" | "Shown in Stack search" |
+| EditorScreen.kt | Partner items ("Share with [name]", "Stop sharing with [name]") sat beside the Stack item | They follow a divider at the bottom of the menu |
+
+The Stack item is not hidden for documents in a folder Stack already reads: Stack has no call that answers that, so only the rename was done.
