@@ -6,8 +6,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SharingTest {
-    private fun labels(s: PartnerStatus?, loc: Boolean, shared: Boolean = false) =
-        Sharing.items(s, loc, shared).map { if (it is ShareItem.Share) it.label else (it as ShareItem.Stop).label }
+    private fun labels(s: PartnerStatus?, loc: Boolean, state: ShareState? = ShareState(false, null)) =
+        Sharing.items(s, loc, state).map { when (it) { is ShareItem.Share -> it.label; is ShareItem.Stop -> it.label; is ShareItem.Via -> it.label } }
 
     @Test fun connectedShowsThePartnersName() = assertEquals(listOf("Share with Sam"), labels(PartnerStatus("connected", "Sam"), true))
     @Test fun notConnectedStatesOfferSharePartner() {
@@ -16,12 +16,15 @@ class SharingTest {
     @Test fun filenMissingHidesTheItem() = assertTrue(labels(null, true).isEmpty())
     @Test fun noLocatorAddsEllipsisAndNeedsFilen() {
         assertEquals(listOf("Share with Sam…"), labels(PartnerStatus("connected", "Sam"), false))
-        assertTrue((Sharing.items(PartnerStatus("connected", "Sam"), false, false)[0] as ShareItem.Share).needsFilen)
+        assertTrue((Sharing.items(PartnerStatus("connected", "Sam"), false, null)[0] as ShareItem.Share).needsFilen)
     }
-    @Test fun stopOnlyWhenKnownSharedAndConnected() {
-        assertEquals(listOf("Share with Sam", "Stop sharing with Sam"), labels(PartnerStatus("connected", "Sam"), true, true))
-        assertEquals(listOf("Share with partner…"), labels(PartnerStatus("none", ""), true, true))
+    @Test fun sharedOffersStopOnly() = assertEquals(listOf("Stop sharing with Sam"), labels(PartnerStatus("connected", "Sam"), true, ShareState(true, null)))
+    @Test fun sharedViaFolderIsADisabledNote() {
+        assertEquals(listOf("Shared with Sam in Taxes"), labels(PartnerStatus("connected", "Sam"), true, ShareState(false, "Taxes")))
+        assertTrue(Sharing.items(PartnerStatus("connected", "Sam"), true, ShareState(false, "Taxes"))[0] is ShareItem.Via)
     }
+    @Test fun unknownStateOffersShare() = assertEquals(listOf("Share with Sam"), labels(PartnerStatus("connected", "Sam"), true, null))
+    @Test fun notConnectedNeverShowsStop() = assertEquals(listOf("Share with partner…"), labels(PartnerStatus("none", ""), true, ShareState(true, null)))
     @Test fun resultMessages() {
         assertEquals("Shared with Sam", Sharing.resultMessage(true, true, false, "Sam", null, null))
         assertEquals("Stopped sharing", Sharing.resultMessage(true, false, true, "Sam", null, null))

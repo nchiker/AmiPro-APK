@@ -110,8 +110,8 @@ fun EditorScreen(
                         DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Share with Stack") }, onClick = { menu = false; vm.shareWithStack() }, enabled = !vm.busy)
                         vm.shareItems.forEach { item ->
-                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label }
-                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy)
+                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label; is ShareItem.Via -> item.label }
+                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy && item !is ShareItem.Via)
                         }
                         DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
