@@ -68,6 +68,7 @@ class EditorViewModel(private val app: Application) {
 
     private var doc: AmiDoc? = null
     private var source: Uri? = null
+        set(value) { field = value; shareItems = emptyList(); shareItemsUuid = null }
 
     val paragraphs = mutableStateListOf<Paragraph>()
     var name by mutableStateOf("")
@@ -102,6 +103,8 @@ class EditorViewModel(private val app: Application) {
     /** Menu items for sharing this document with Filen's partner; refreshed whenever the menu opens. */
     var shareItems by mutableStateOf<List<ShareItem>>(emptyList())
         private set
+    /** The Filen uuid of the document [shareItems] were made for; null when there are none. */
+    private var shareItemsUuid: String? = null
     /** Set when Filen's share sheet should be started (the screen starts it for a result). */
     var shareLaunch by mutableStateOf<ShareLaunch?>(null)
     private var launched: ShareLaunch? = null
@@ -500,12 +503,14 @@ class EditorViewModel(private val app: Application) {
     fun refreshShareItems() {
         val uri = source
         viewModelScope.launch {
-            val items = withContext(Dispatchers.IO) {
+            val (items, uuid) = withContext(Dispatchers.IO) {
                 val status = filenSharing.partnerStatus()
                 val uuid = if (status != null && uri != null) FilenLocator(app).locate(uri)?.uuid else null
-                Sharing.items(status, uuid != null, uuid?.let { filenSharing.shareState(it) })
+                Sharing.items(status, uuid != null, uuid?.let { filenSharing.shareState(it) }) to uuid
             }
+            if (source != uri) return@launch // the document changed while Filen answered
             shareItems = items
+            shareItemsUuid = uuid
         }
     }
 
@@ -515,7 +520,10 @@ class EditorViewModel(private val app: Application) {
         if (uri == null || doc == null) { message = "Save the document first, then share."; return }
         viewModelScope.launch {
             val uuid = withContext(Dispatchers.IO) { FilenLocator(app).locate(uri)?.uuid }
+            if (source != uri) return@launch
             if (uuid == null || (item is ShareItem.Share && item.needsFilen)) { needFilenFirst = true; return@launch }
+            // The items must have been made for this very document; otherwise Share/Stop could be the other document's.
+            if (shareItemsUuid != uuid || item !in shareItems) { refreshShareItems(); return@launch }
             if (edited) { message = "Save your changes first."; return@launch }
             launchedName = when (item) { is ShareItem.Share -> item.name; is ShareItem.Stop -> item.name; is ShareItem.Via -> return@launch }
             shareLaunch = ShareLaunch(uuid, item is ShareItem.Stop)

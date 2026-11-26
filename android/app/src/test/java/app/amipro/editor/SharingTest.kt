@@ -38,4 +38,25 @@ class SharingTest {
         val partnerLabels = listOf(PartnerStatus("connected", "Sam"), PartnerStatus("none", "")).flatMap { labels(it, true) + labels(it, false) }
         assertTrue(partnerLabels.none { it == Sharing.SHOW_IN_STACK || it.contains("Stack") })
     }
+    @Test fun cleanStripsControlAndBidiAndCaps() {
+        assertEquals("Sam", Sharing.clean("S\u202Ea\u0000m\u200F", 40))
+        assertEquals("a b", Sharing.clean("a\n\tb", 40))
+        assertEquals(40, Sharing.clean("x".repeat(100), Sharing.MAX_NAME).length)
+        assertEquals(200, Sharing.clean("y".repeat(500), Sharing.MAX_MESSAGE).length)
+        assertEquals("", Sharing.clean(null, 40))
+    }
+    @Test fun longNameAndMessageAreCapped() {
+        val long = "n".repeat(100)
+        assertEquals(listOf("Share with " + "n".repeat(40)), labels(PartnerStatus("connected", long), true))
+        assertEquals("Couldn't share: " + "m".repeat(200), Sharing.resultMessage(false, null, false, "Sam", "failed", "m".repeat(500)))
+        assertEquals("Couldn't share: ab", Sharing.resultMessage(false, null, false, "Sam", "failed", "a\u202Eb"))
+    }
+    @Test fun pinNeedsPackageAndOneMatchingCertificate() {
+        assertTrue(FilenPin.decide(FilenPin.PACKAGE, listOf(FilenPin.CERT)))
+        assertEquals(false, FilenPin.decide("evil.app", listOf(FilenPin.CERT)))
+        assertEquals(false, FilenPin.decide(FilenPin.PACKAGE, listOf("00")))
+        assertEquals(false, FilenPin.decide(FilenPin.PACKAGE, listOf(FilenPin.CERT, "00")))
+        assertEquals(false, FilenPin.decide(FilenPin.PACKAGE, emptyList()))
+        assertEquals(false, FilenPin.decide(null, listOf(FilenPin.CERT)))
+    }
 }

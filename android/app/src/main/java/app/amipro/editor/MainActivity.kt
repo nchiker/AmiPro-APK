@@ -135,7 +135,7 @@ private fun App(vm: EditorViewModel) {
     LaunchedEffect(vm.shareLaunch) {
         vm.shareLaunch?.let { l ->
             vm.shareLaunched(l)
-            try { sharer.launch(shareFilen.intent(l)) } catch (e: Exception) { vm.onShareResult(false, Intent().putExtra(Sharing.EXTRA_ERROR, "failed")) }
+            try { sharer.launch(shareFilen.intent(l) ?: throw IllegalStateException("not the pinned Filen")) } catch (e: Exception) { vm.onShareResult(false, Intent().putExtra(Sharing.EXTRA_ERROR, "failed")) }
         }
     }
     val updater = (context.applicationContext as AmiProApp).updater

@@ -74,6 +74,7 @@ class FilenLocator(private val context: Context) {
 
     fun locate(uri: Uri): Where? {
         if (uri.authority != "app.filenfiles.documents") return null
+        if (!FilenPin.authority(context, authority)) return null
         return try {
             val a = context.contentResolver.call(authority, "locate", uri.toString(), null) ?: return null
             if (a.getString("error") != null) return null
@@ -84,6 +85,7 @@ class FilenLocator(private val context: Context) {
 
     /** `lookup(uuid)`: is that Filen file there (and not in the trash)? Null when Filen cannot say. */
     fun lookup(uuid: String): FilenLookup? = try {
+        if (!FilenPin.authority(context, authority)) return null
         val a = context.contentResolver.call(authority, "lookup", uuid, null)
         if (a == null || a.getString("error") != null) null
         else FilenLookup.of(a.getBoolean("exists"), a.getBoolean("trashed"), a.getString("path").orEmpty())
