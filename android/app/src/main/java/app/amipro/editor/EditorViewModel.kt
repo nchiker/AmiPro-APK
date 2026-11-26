@@ -98,6 +98,17 @@ class EditorViewModel(private val app: Application) {
     private val linkMap = LinkMap(app)
     private val stack = StackLink(app)
     private val stackSync = StackSync(app)
+    private val filenSharing = FilenSharing(app)
+    private val shareStore = app.getSharedPreferences("partner_share", android.content.Context.MODE_PRIVATE)
+    /** Menu items for sharing this document with Filen's partner; refreshed whenever the menu opens. */
+    var shareItems by mutableStateOf<List<ShareItem>>(emptyList())
+        private set
+    /** Set when Filen's share sheet should be started (the screen starts it for a result). */
+    var shareLaunch by mutableStateOf<ShareLaunch?>(null)
+    private var launched: ShareLaunch? = null
+    private var launchedName = "partner"
+    /** Set when the document is not in Filen: asks to save it there first. */
+    var needFilenFirst by mutableStateOf(false)
     /** Set when the open file is password-protected and Share with Stack needs the person's warning first. */
     var pendingProtectedShare by mutableStateOf(false)
     /** A document that has no file yet: Save asks where to put it. */
@@ -483,6 +494,48 @@ class EditorViewModel(private val app: Application) {
     fun printData(): PrintData? {
         val d = doc ?: return null
         return printDataOf(d, paragraphs.toList())
+    }
+
+    // ---- Share with the Filen partner ----
+    /** Asks Filen for the partner and this document's Filen file, then sets the menu items. Nothing is shown if Filen is missing. */
+    fun refreshShareItems() {
+        val uri = source
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                val status = filenSharing.partnerStatus()
+                val uuid = if (status != null && uri != null) FilenLocator(app).locate(uri)?.uuid else null
+                Sharing.items(status, uuid != null, uuid != null && uuid in shareStore.getStringSet("shared", emptySet())!!)
+            }
+            shareItems = items
+        }
+    }
+
+    /** The menu item was tapped. A document outside Filen asks first; nothing is uploaded here. */
+    fun startShare(item: ShareItem) {
+        val uri = source
+        if (uri == null || doc == null) { message = "Save the document first, then share."; return }
+        viewModelScope.launch {
+            val uuid = withContext(Dispatchers.IO) { FilenLocator(app).locate(uri)?.uuid }
+            if (uuid == null || (item is ShareItem.Share && item.needsFilen)) { needFilenFirst = true; return@launch }
+            if (edited) { message = "Save your changes first."; return@launch }
+            launchedName = if (item is ShareItem.Share) item.name else (item as ShareItem.Stop).name
+            shareLaunch = ShareLaunch(uuid, item is ShareItem.Stop)
+        }
+    }
+
+    /** Called by the screen when it has started [shareLaunch]. */
+    fun shareLaunched(launch: ShareLaunch) { launched = launch; shareLaunch = null }
+
+    fun onShareResult(ok: Boolean, data: android.content.Intent?) {
+        val l = launched ?: return
+        launched = null
+        val shared = if (data?.hasExtra(Sharing.EXTRA_SHARED) == true) data.getBooleanExtra(Sharing.EXTRA_SHARED, false) else null
+        if (ok) {
+            val set = shareStore.getStringSet("shared", emptySet())!!.toMutableSet()
+            if (l.stop) set.remove(l.uuid) else if (shared == true) set.add(l.uuid)
+            shareStore.edit().putStringSet("shared", set).apply()
+        }
+        Sharing.resultMessage(ok, shared, l.stop, launchedName, data?.getStringExtra(Sharing.EXTRA_ERROR), data?.getStringExtra(Sharing.EXTRA_MESSAGE))?.let { message = it }
     }
 
     // ---- Share with Stack ----

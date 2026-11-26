@@ -33,3 +33,10 @@ Rules: title 6 words or fewer; body 2 short sentences (about 25 words), one idea
 Not changed: titles ("Updates", "Share a password-protected file?"), buttons (Download, Install, Try again, Share anyway, Cancel, Not now), and the loss list before saving (it is the content the person decides on). "Continue" on the install explanation is the one new button; it only opens the Android settings page.
 
 Follow-up (same day): "Stack is not installed." now has a "Get Stack" action (opens https://github.com/nchiker/stack/releases/latest) on the start screen and in the editor message bar. The raw error text removed from messages is kept in the log (`adb logcat -s StackLink Updates`), not on screen; no "Details" link was built.
+
+## Share with the Filen partner (new text, folder-sharing branch)
+| File | Text |
+|---|---|
+| Sharing.kt | Menu: "Share with [name]", "Share with partner…", "Share with [name]…" (document not in Filen), "Stop sharing with [name]" |
+| Sharing.kt | Snackbars: "Shared with [name]", "Stopped sharing", "Couldn't share: [Filen's message, or try again.]" (nothing on cancel) |
+| MainActivity.kt | Dialog "Save it to Filen first": "Sharing works on files in Filen. Save a copy there, then share." Buttons Save, Cancel |

@@ -1,5 +1,6 @@
 package app.amipro.editor
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -127,6 +128,16 @@ private fun App(vm: EditorViewModel) {
         if (uri != null) vm.saveCopyTo(uri)
     }
     val context = LocalContext.current
+    val shareFilen = remember { FilenSharing(context) }
+    val sharer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        vm.onShareResult(r.resultCode == Activity.RESULT_OK, r.data)
+    }
+    LaunchedEffect(vm.shareLaunch) {
+        vm.shareLaunch?.let { l ->
+            vm.shareLaunched(l)
+            try { sharer.launch(shareFilen.intent(l)) } catch (e: Exception) { vm.onShareResult(false, Intent().putExtra(Sharing.EXTRA_ERROR, "failed")) }
+        }
+    }
     val updater = (context.applicationContext as AmiProApp).updater
     val appState = context.applicationContext as AmiProApp
     var showTheme by rememberSaveable { mutableStateOf(false) }
@@ -147,6 +158,13 @@ private fun App(vm: EditorViewModel) {
         var confirmClose by remember { mutableStateOf(false) }
         BackHandler { if (vm.edited) confirmClose = true else vm.close() }
         EditorScreen(vm, onOpen = { picker.launch(arrayOf("*/*")) }, onNew = vm::requestNew, onCopy = vm::requestCopy, onPrint = print, onUpdates = openUpdates, onTheme = { showTheme = true }, onObjects = { showObjects = true }, onClose = { if (vm.edited) confirmClose = true else vm.close() })
+        if (vm.needFilenFirst) AlertDialog(
+            onDismissRequest = { vm.needFilenFirst = false },
+            title = { Text("Save it to Filen first") },
+            text = { Text("Sharing works on files in Filen. Save a copy there, then share.") },
+            confirmButton = { TextButton(onClick = { vm.needFilenFirst = false; vm.requestCopy() }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { vm.needFilenFirst = false }) { Text("Cancel") } },
+        )
         if (confirmClose) AlertDialog(
             onDismissRequest = { confirmClose = false },
             title = { Text("Close without saving?") },

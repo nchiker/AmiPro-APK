@@ -72,6 +72,7 @@ fun EditorScreen(
     onUpdates: () -> Unit, onTheme: () -> Unit, onObjects: () -> Unit, onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    LaunchedEffect(menu) { if (menu) vm.refreshShareItems() }
     val snackbar = remember { SnackbarHostState() }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scroll = rememberScrollState()
@@ -108,6 +109,10 @@ fun EditorScreen(
                         DropdownMenuItem(text = { Text("Pictures and tables...") }, onClick = { menu = false; onObjects() })
                         DropdownMenuItem(text = { Text("Print...") }, onClick = { menu = false; onPrint() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Share with Stack") }, onClick = { menu = false; vm.shareWithStack() }, enabled = !vm.busy)
+                        vm.shareItems.forEach { item ->
+                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label }
+                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy)
+                        }
                         DropdownMenuItem(text = { Text("New document") }, onClick = { menu = false; onNew() })
                         DropdownMenuItem(text = { Text("Save a copy...") }, onClick = { menu = false; onCopy() }, enabled = !vm.busy)
                         DropdownMenuItem(text = { Text("Open another document...") }, onClick = { menu = false; onOpen() })
