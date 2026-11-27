@@ -504,6 +504,8 @@ class EditorViewModel(private val app: Application) {
         val uri = source
         viewModelScope.launch {
             val (items, uuid) = withContext(Dispatchers.IO) {
+                val gate = Sharing.gate(FilenPin.installed(app), filenSharing.contractLevel())
+                if (gate != null) return@withContext listOf(gate) to null
                 val status = filenSharing.partnerStatus()
                 val uuid = if (status != null && uri != null) FilenLocator(app).locate(uri)?.uuid else null
                 Sharing.items(status, uuid != null, uuid?.let { filenSharing.shareState(it) }) to uuid
@@ -516,6 +518,7 @@ class EditorViewModel(private val app: Application) {
 
     /** The menu item was tapped. A document outside Filen asks first; nothing is uploaded here. */
     fun startShare(item: ShareItem) {
+        if (item is ShareItem.Update || item is ShareItem.Get) { filenSharing.openFilenOrReleases(item); return }
         val uri = source
         if (uri == null || doc == null) { message = "Save the document first, then share."; return }
         viewModelScope.launch {
@@ -525,7 +528,7 @@ class EditorViewModel(private val app: Application) {
             // The items must have been made for this very document; otherwise Share/Stop could be the other document's.
             if (shareItemsUuid != uuid || item !in shareItems) { refreshShareItems(); return@launch }
             if (edited) { message = "Save your changes first."; return@launch }
-            launchedName = when (item) { is ShareItem.Share -> item.name; is ShareItem.Stop -> item.name; is ShareItem.Via -> return@launch }
+            launchedName = when (item) { is ShareItem.Share -> item.name; is ShareItem.Stop -> item.name; is ShareItem.Via, is ShareItem.Update, is ShareItem.Get -> return@launch }
             shareLaunch = ShareLaunch(uuid, item is ShareItem.Stop)
         }
     }

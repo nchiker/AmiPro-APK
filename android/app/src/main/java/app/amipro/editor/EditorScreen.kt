@@ -117,7 +117,7 @@ fun EditorScreen(
                         DropdownMenuItem(text = { Text("Check for updates...") }, onClick = { menu = false; onUpdates() })
                         if (vm.shareItems.isNotEmpty()) HorizontalDivider()
                         vm.shareItems.forEach { item ->
-                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label; is ShareItem.Via -> item.label }
+                            val label = when (item) { is ShareItem.Share -> item.label; is ShareItem.Stop -> item.label; is ShareItem.Via -> item.label; is ShareItem.Update -> item.label; is ShareItem.Get -> item.label }
                             DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; vm.startShare(item) }, enabled = !vm.busy && item !is ShareItem.Via)
                         }
                     }

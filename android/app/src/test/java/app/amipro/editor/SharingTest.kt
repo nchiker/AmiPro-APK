@@ -7,8 +7,20 @@ import kotlin.test.assertTrue
 
 class SharingTest {
     private fun labels(s: PartnerStatus?, loc: Boolean, state: ShareState? = ShareState(false, null)) =
-        Sharing.items(s, loc, state).map { when (it) { is ShareItem.Share -> it.label; is ShareItem.Stop -> it.label; is ShareItem.Via -> it.label } }
+        Sharing.items(s, loc, state).map { when (it) { is ShareItem.Share -> it.label; is ShareItem.Stop -> it.label; is ShareItem.Via -> it.label; is ShareItem.Update -> it.label; is ShareItem.Get -> it.label } }
 
+    @Test fun gateShowsUpdateWhenContractMissingOrLow() {
+        assertEquals(ShareItem.Update(), Sharing.gate(true, null))
+        assertEquals(ShareItem.Update(), Sharing.gate(true, 0))
+        assertEquals("Update Filen Files to share with your partner", ShareItem.Update().label)
+    }
+    @Test fun gateShowsGetWhenFilenNotInstalled() {
+        assertEquals(ShareItem.Get(), Sharing.gate(false, null))
+        assertEquals(ShareItem.Get(), Sharing.gate(false, 1))
+        assertEquals("Get Filen Files", ShareItem.Get().label)
+        assertEquals("https://github.com/nchiker/Filen-Filemanager/releases/latest", Sharing.FILEN_RELEASES)
+    }
+    @Test fun gateOpensAtLevelOneOrMore() { assertNull(Sharing.gate(true, 1)); assertNull(Sharing.gate(true, 2)) }
     @Test fun connectedShowsThePartnersName() = assertEquals(listOf("Share with Sam"), labels(PartnerStatus("connected", "Sam"), true))
     @Test fun notConnectedStatesOfferSharePartner() {
         for (st in listOf("none", "requested", "incoming")) assertEquals(listOf("Share with partner…"), labels(PartnerStatus(st, "Sam"), true))

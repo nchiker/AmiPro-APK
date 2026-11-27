@@ -14,6 +14,10 @@ sealed class ShareItem {
     data class Stop(val label: String, val name: String) : ShareItem()
     /** The document is not shared itself but a folder above it is: shown, not tappable. */
     data class Via(val label: String) : ShareItem()
+    /** Filen is installed but too old (no `contract` call, or level below [Sharing.MIN_LEVEL]): tapping opens Filen, whose updater installs the new version. */
+    data class Update(val label: String = Sharing.UPDATE_FILEN) : ShareItem()
+    /** Filen is not installed: tapping opens its release page in the browser. */
+    data class Get(val label: String = Sharing.GET_FILEN) : ShareItem()
 }
 
 /** Filen's answer to `share_state` (I4 F10): shared with the partner, and/or only through a folder above it. */
@@ -34,6 +38,17 @@ object Sharing {
 
     /** The menu text for putting this document in Stack's own search. It is not about the partner, so it does not say "Share". */
     const val SHOW_IN_STACK = "Show in Stack search"
+
+    /** The lowest Filen contract level (`contract` call, I4 F12) that has everything sharing needs. */
+    const val MIN_LEVEL = 1
+    const val UPDATE_FILEN = "Update Filen Files to share with your partner"
+    const val GET_FILEN = "Get Filen Files"
+    /** The Filen release page (not the API address). Same as Filen's UpdateChecker.RELEASES_PAGE. */
+    const val FILEN_RELEASES = "https://github.com/nchiker/Filen-Filemanager/releases/latest"
+
+    /** The pure decision before any partner item: not installed -> Get; no `contract` answer or level too low -> Update; else null (go on). */
+    fun gate(installed: Boolean, level: Int?): ShareItem? =
+        if (!installed) ShareItem.Get() else if (level == null || level < MIN_LEVEL) ShareItem.Update() else null
 
     /**
      * Null status (Filen missing or call refused) hides the item. [state] is Filen's `share_state` for the document; null =
@@ -102,7 +117,7 @@ object FilenPin {
         }
     } catch (e: Exception) { null }
 
-    private fun installed(context: Context) = decide(PACKAGE, certs(context) ?: emptyList())
+    fun installed(context: Context) = decide(PACKAGE, certs(context) ?: emptyList())
 
     /** True when [authority] is served by the pinned Filen Files. Checked before every provider call. */
     fun authority(context: Context, authority: String): Boolean = try {
@@ -119,6 +134,20 @@ object FilenPin {
 
 /** Calls into Filen Files for sharing. Every failure means "no answer", never an exception. */
 class FilenSharing(private val context: Context) {
+    /** Filen's `contract` level (I4 F12); null when the call is missing, refused or fails (a Filen older than 0.5 has no such call). */
+    fun contractLevel(): Int? = try {
+        if (!FilenPin.authority(context, AUTHORITY)) return null
+        val a = context.contentResolver.call(AUTHORITY, "contract", null, null)
+        if (a == null || a.getString("error") != null || !a.containsKey("level")) null else a.getInt("level")
+    } catch (e: Exception) { null }
+
+    /** Opens the pinned Filen (for its updater), or its release page when it is not installed. */
+    fun openFilenOrReleases(item: ShareItem) {
+        val i = if (item is ShareItem.Update) context.packageManager.getLaunchIntentForPackage(FilenPin.PACKAGE)?.takeIf { FilenPin.activity(context, it) }
+                else Intent(Intent.ACTION_VIEW, Uri.parse(Sharing.FILEN_RELEASES))
+        try { if (i != null) context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
+    }
+
     fun partnerStatus(): PartnerStatus? = try {
         if (!FilenPin.authority(context, AUTHORITY)) return null
         val a = context.contentResolver.call(AUTHORITY, "partner_status", null, null)
