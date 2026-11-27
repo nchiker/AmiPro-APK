@@ -2,7 +2,7 @@
 
 Read first: `~/Projects/Stack/docs/STACK_LINK_CONTRACT.md` (the contract and every decision), then this file, then
 `docs/STATUS.md` ("Planned: Stack link"). The Stack side of slice 2 is built, committed and tested
-(`~/Projects/Stack`, commits `d5f11c2`, `04d46ae`, `57360db`). Nothing on the AmiPro side exists yet.
+(`~/Projects/Stack`, commits `d5f11c2`, `04d46ae`, `57360db`). The AmiPro side is built and released (0.6.1 restore, 0.7.0 folder sharing pending); see docs/STATUS.md.
 
 ## Goal of this slice
 The user writes a document in AmiPro, taps **Share with Stack**, and it appears in Stack's search and list with its

@@ -1,3 +1,5 @@
+**Current version: 0.7.0 (versionCode 8), branch `folder-sharing`, release PENDING** (committed locally; not tagged, pushed or published; owner go-ahead needed; order Filen 0.5.0, Stack 0.21.0, then Ami Pro). Release notes: `dist/RELEASE_NOTES_0.7.0.md` (dist/ is git-ignored, so the notes are not in the commit). Adds sharing with the partner via Filen, "Shared with [name] in [folder]", Save to Filen first, "Show in Stack search" (renamed), Update Filen prompt (contract level check). Needs Filen 0.5.0. Before release: default build must be checked for `STACK_PACKAGE` = org.stackdocs.app (only `-PstackPackage` overrides it).
+
 # STATUS (2026-11-13, updated after Open with + Save a copy)
 
 ## Built and verified (spike, feasibility steps 1-2)
