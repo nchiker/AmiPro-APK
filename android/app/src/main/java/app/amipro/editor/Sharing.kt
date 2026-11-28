@@ -12,7 +12,7 @@ sealed class ShareItem {
     /** [label] is the whole menu text. [needsFilen] is true when the document is not in Filen yet. */
     data class Share(val label: String, val needsFilen: Boolean, val name: String) : ShareItem()
     data class Stop(val label: String, val name: String) : ShareItem()
-    /** The document is not shared itself but a folder above it is: shown, not tappable. */
+    /** Shown, not tappable: shared only through a folder above it, or somebody else's file shared with this account. */
     data class Via(val label: String) : ShareItem()
     /** Filen is installed but too old (no `contract` call, or level below [Sharing.MIN_LEVEL]): tapping opens Filen, whose updater installs the new version. */
     data class Update(val label: String = Sharing.UPDATE_FILEN) : ShareItem()
@@ -54,8 +54,9 @@ object Sharing {
      * Null status (Filen missing or call refused) hides the item. [state] is Filen's `share_state` for the document; null =
      * unknown (offline, not answered): Share is offered. Shared -> Stop; shared only through a folder -> a disabled note.
      */
-    fun items(status: PartnerStatus?, hasLocator: Boolean, state: ShareState?): List<ShareItem> {
+    fun items(status: PartnerStatus?, hasLocator: Boolean, state: ShareState?, received: Boolean = false): List<ShareItem> {
         if (status == null) return emptyList()
+        if (received) return listOf(ShareItem.Via(RECEIVED))
         val connected = status.state == "connected" && status.name.isNotBlank()
         val who = if (connected) clean(status.name, MAX_NAME).ifEmpty { "partner" } else "partner"
         if (connected && hasLocator && state != null) {
@@ -65,6 +66,35 @@ object Sharing {
         val share = ShareItem.Share(if (connected) "Share with $who" else "Share with partner…", !hasLocator, who)
             .let { if (!hasLocator && connected) it.copy(label = "Share with $who…") else it }
         return listOf(share)
+    }
+
+    const val TAP_AGAIN = "Sharing changed. Open the menu to see it."
+
+    const val RECEIVED = "Shared with you: only its owner can share it"
+
+    /** Filen's "Shared with me" documents (id `filen-in:`) belong to somebody else: Filen will not share them on. */
+    fun isReceived(authority: String?, lastSegment: String?): Boolean =
+        authority == "app.filenfiles.documents" && lastSegment?.startsWith("filen-in:") == true
+
+    /**
+     * The menu items were remade after a tap (they were made while Filen could not answer). The item to go ahead with, or
+     * null when the new menu offers something else than what was tapped. Filen asks for confirmation either way.
+     */
+    fun sameAction(tapped: ShareItem, fresh: List<ShareItem>): ShareItem? = fresh.firstOrNull {
+        (tapped is ShareItem.Share && it is ShareItem.Share && !it.needsFilen && (tapped.needsFilen || it.name == tapped.name)) ||
+            (tapped is ShareItem.Stop && it is ShareItem.Stop && it.name == tapped.name)
+    }
+
+    /**
+     * What to say when Filen could not name the file's Filen copy. Null for [FilenLocator.Answer.Found] and for
+     * [FilenLocator.Answer.NotFilen]: only the latter may ask to save a copy into Filen.
+     */
+    fun locateProblem(answer: FilenLocator.Answer): String? = when (answer) {
+        is FilenLocator.Answer.Found, FilenLocator.Answer.NotFilen -> null
+        FilenLocator.Answer.Locked -> "Filen Files is locked. Open it and unlock, then tap Share again."
+        FilenLocator.Answer.Pending -> "Filen Files hasn't finished uploading this file. Check the upload in Filen Files, then try again."
+        FilenLocator.Answer.SignedOut -> "Filen Files isn't ready. Open it, check you are signed in, then tap Share again."
+        FilenLocator.Answer.NoAnswer -> "Filen Files didn't answer. Try again."
     }
 
     const val MAX_NAME = 40

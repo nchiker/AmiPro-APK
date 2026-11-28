@@ -161,7 +161,7 @@ private fun App(vm: EditorViewModel) {
         if (vm.needFilenFirst) AlertDialog(
             onDismissRequest = { vm.needFilenFirst = false },
             title = { Text("Save it to Filen first") },
-            text = { Text("Sharing works on files in Filen. Save a copy there, then share.") },
+            text = { Text("Ami Pro can't tell where this file is in Filen. If it is already there, use Open and pick it under Filen Files. If not, save a copy there.") },
             confirmButton = { TextButton(onClick = { vm.needFilenFirst = false; vm.requestCopy() }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { vm.needFilenFirst = false }) { Text("Cancel") } },
         )

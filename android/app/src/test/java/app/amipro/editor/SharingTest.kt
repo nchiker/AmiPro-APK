@@ -37,6 +37,41 @@ class SharingTest {
     }
     @Test fun unknownStateOffersShare() = assertEquals(listOf("Share with Sam"), labels(PartnerStatus("connected", "Sam"), true, null))
     @Test fun notConnectedNeverShowsStop() = assertEquals(listOf("Share with partner…"), labels(PartnerStatus("none", ""), true, ShareState(true, null)))
+    @Test fun onlyAFileOutsideFilenAsksToSaveThere() {
+        assertEquals(FilenLocator.Answer.NotFilen, FilenLocator.Answer.of("not_filen", null, null))
+        for ((code, want) in listOf("locked" to FilenLocator.Answer.Locked, "pending" to FilenLocator.Answer.Pending, "not_signed_in" to FilenLocator.Answer.SignedOut,
+                "unreachable" to FilenLocator.Answer.NoAnswer, "refused" to FilenLocator.Answer.NoAnswer, "invalid" to FilenLocator.Answer.NoAnswer, "something_new" to FilenLocator.Answer.NoAnswer)) {
+            val got = FilenLocator.Answer.of(code, null, null)
+            assertEquals(want, got, code)
+            assertTrue(Sharing.locateProblem(got) != null, code)
+        }
+        assertNull(Sharing.locateProblem(FilenLocator.Answer.NotFilen))
+    }
+    @Test fun locateAnswerNeedsAUuid() {
+        val found = FilenLocator.Answer.of(null, "u1", null) as FilenLocator.Answer.Found
+        assertEquals("u1", found.where.uuid)
+        assertNull(Sharing.locateProblem(found))
+        assertEquals(FilenLocator.Answer.NoAnswer, FilenLocator.Answer.of(null, "", "/a"))
+    }
+    @Test fun aReceivedFileIsNotOfferedForSharing() {
+        assertTrue(Sharing.isReceived("app.filenfiles.documents", "filen-in:abc"))
+        assertEquals(false, Sharing.isReceived("app.filenfiles.documents", "filen-out:abc"))
+        assertEquals(false, Sharing.isReceived("app.filenfiles.documents", "filen:abc"))
+        assertEquals(false, Sharing.isReceived("other.provider", "filen-in:abc"))
+        assertEquals(listOf<ShareItem>(ShareItem.Via(Sharing.RECEIVED)), Sharing.items(PartnerStatus("connected", "Sam"), true, null, received = true))
+    }
+    @Test fun aRemadeMenuGoesOnOnlyWithTheSameAction() {
+        val stale = ShareItem.Share("Share with Sam…", true, "Sam")
+        val share = ShareItem.Share("Share with Sam", false, "Sam")
+        val stop = ShareItem.Stop("Stop sharing with Sam", "Sam")
+        assertEquals(share, Sharing.sameAction(stale, listOf(share)))
+        assertEquals(stop, Sharing.sameAction(stop, listOf(stop)))
+        assertNull(Sharing.sameAction(stale, listOf(stop)))
+        assertNull(Sharing.sameAction(share, listOf(ShareItem.Via("Shared with Sam in Taxes"))))
+        assertNull(Sharing.sameAction(stale, listOf(stale)))
+        assertNull(Sharing.sameAction(share, listOf(ShareItem.Share("Share with Pat", false, "Pat"))))
+        assertNull(Sharing.sameAction(stop, listOf(share)))
+    }
     @Test fun resultMessages() {
         assertEquals("Shared with Sam", Sharing.resultMessage(true, true, false, "Sam", null, null))
         assertEquals("Stopped sharing", Sharing.resultMessage(true, false, true, "Sam", null, null))

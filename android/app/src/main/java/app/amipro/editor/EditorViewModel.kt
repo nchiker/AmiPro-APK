@@ -503,17 +503,21 @@ class EditorViewModel(private val app: Application) {
     fun refreshShareItems() {
         val uri = source
         viewModelScope.launch {
-            val (items, uuid) = withContext(Dispatchers.IO) {
-                val gate = Sharing.gate(FilenPin.installed(app), filenSharing.contractLevel())
-                if (gate != null) return@withContext listOf(gate) to null
-                val status = filenSharing.partnerStatus()
-                val uuid = if (status != null && uri != null) FilenLocator(app).locate(uri)?.uuid else null
-                Sharing.items(status, uuid != null, uuid?.let { filenSharing.shareState(it) }) to uuid
-            }
+            val (items, uuid) = withContext(Dispatchers.IO) { makeShareItems(uri) }
             if (source != uri) return@launch // the document changed while Filen answered
             shareItems = items
             shareItemsUuid = uuid
         }
+    }
+
+    /** The menu items for [uri] and the Filen uuid they were made for. Blocking: call off the main thread. */
+    private fun makeShareItems(uri: Uri?): Pair<List<ShareItem>, String?> {
+        val gate = Sharing.gate(FilenPin.installed(app), filenSharing.contractLevel())
+        if (gate != null) return listOf(gate) to null
+        val status = filenSharing.partnerStatus()
+        val uuid = if (status != null && uri != null) FilenLocator(app).locate(uri)?.uuid else null
+        val received = Sharing.isReceived(uri?.authority, uri?.lastPathSegment)
+        return Sharing.items(status, uuid != null, if (received) null else uuid?.let { filenSharing.shareState(it) }, received) to uuid
     }
 
     /** The menu item was tapped. A document outside Filen asks first; nothing is uploaded here. */
@@ -522,14 +526,26 @@ class EditorViewModel(private val app: Application) {
         val uri = source
         if (uri == null || doc == null) { message = "Save the document first, then share."; return }
         viewModelScope.launch {
-            val uuid = withContext(Dispatchers.IO) { FilenLocator(app).locate(uri)?.uuid }
+            val answer = withContext(Dispatchers.IO) { FilenLocator(app).ask(uri) }
             if (source != uri) return@launch
-            if (uuid == null || (item is ShareItem.Share && item.needsFilen)) { needFilenFirst = true; return@launch }
-            // The items must have been made for this very document; otherwise Share/Stop could be the other document's.
-            if (shareItemsUuid != uuid || item !in shareItems) { refreshShareItems(); return@launch }
+            if (answer == FilenLocator.Answer.NotFilen) { needFilenFirst = true; return@launch }
+            Sharing.locateProblem(answer)?.let { message = it; return@launch }
+            val uuid = (answer as FilenLocator.Answer.Found).where.uuid
+            // The items must have been made for this very document (not another's, and not while Filen could not say
+            // which file this is). Otherwise make them again and go on only if they still offer what was tapped.
+            var tapped = item
+            if (shareItemsUuid != uuid || item !in shareItems) {
+                val (items, madeFor) = withContext(Dispatchers.IO) { makeShareItems(uri) }
+                if (source != uri) return@launch
+                shareItems = items
+                shareItemsUuid = madeFor
+                val same = if (madeFor == uuid) Sharing.sameAction(item, items) else null
+                if (same == null) { message = (items.firstOrNull() as? ShareItem.Via)?.label ?: Sharing.TAP_AGAIN; return@launch }
+                tapped = same
+            }
             if (edited) { message = "Save your changes first."; return@launch }
-            launchedName = when (item) { is ShareItem.Share -> item.name; is ShareItem.Stop -> item.name; is ShareItem.Via, is ShareItem.Update, is ShareItem.Get -> return@launch }
-            shareLaunch = ShareLaunch(uuid, item is ShareItem.Stop)
+            launchedName = when (tapped) { is ShareItem.Share -> tapped.name; is ShareItem.Stop -> tapped.name; is ShareItem.Via, is ShareItem.Update, is ShareItem.Get -> return@launch }
+            shareLaunch = ShareLaunch(uuid, tapped is ShareItem.Stop)
         }
     }
 

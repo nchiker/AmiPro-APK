@@ -72,15 +72,36 @@ class FilenLocator(private val context: Context) {
 
     private val authority = "app.filenfiles.stacklink"
 
-    fun locate(uri: Uri): Where? {
-        if (uri.authority != "app.filenfiles.documents") return null
-        if (!FilenPin.authority(context, authority)) return null
+    /** `locate`'s answer. Only [NotFilen] means the file is not in Filen; the others mean Filen could not say now. */
+    sealed class Answer {
+        class Found(val where: Where) : Answer()
+        object NotFilen : Answer()
+        object Locked : Answer()
+        object Pending : Answer()
+        object SignedOut : Answer()
+        object NoAnswer : Answer()
+
+        companion object {
+            fun of(error: String?, uuid: String?, path: String?): Answer = when (error) {
+                null -> if (uuid.isNullOrEmpty()) NoAnswer else Found(Where(uuid, path.orEmpty()))
+                "not_filen" -> NotFilen
+                "locked" -> Locked
+                "pending" -> Pending
+                "not_signed_in" -> SignedOut
+                else -> NoAnswer
+            }
+        }
+    }
+
+    fun locate(uri: Uri): Where? = (ask(uri) as? Answer.Found)?.where
+
+    fun ask(uri: Uri): Answer {
+        if (uri.authority != "app.filenfiles.documents") return Answer.NotFilen
+        if (!FilenPin.authority(context, authority)) return Answer.NoAnswer
         return try {
-            val a = context.contentResolver.call(authority, "locate", uri.toString(), null) ?: return null
-            if (a.getString("error") != null) return null
-            val uuid = a.getString("uuid")?.takeIf { it.isNotEmpty() } ?: return null
-            Where(uuid, a.getString("path").orEmpty())
-        } catch (e: Exception) { null }
+            val a = context.contentResolver.call(authority, "locate", uri.toString(), null) ?: return Answer.NoAnswer
+            Answer.of(a.getString("error"), a.getString("uuid"), a.getString("path"))
+        } catch (e: Exception) { Answer.NoAnswer }
     }
 
     /** `lookup(uuid)`: is that Filen file there (and not in the trash)? Null when Filen cannot say. */
